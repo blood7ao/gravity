@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+out/
+release/
+src-tauri/target/
+target/
+*.db
+*.db-*
+*.log
+proxy_log.txt
+proxy_pid
+test_kill
+test_local
+.env
+.env.local
+.DS_Store
