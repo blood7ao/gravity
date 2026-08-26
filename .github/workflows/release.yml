@@ -42,7 +42,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: 'Antigravity Codex v__VERSION__'
+          releaseName: 'Gravity v__VERSION__'
           releaseBody: '跨平台发布包 (macOS .dmg / Windows .exe)'
           releaseDraft: true
           prerelease: false

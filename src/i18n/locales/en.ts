@@ -61,7 +61,7 @@ export const en: TranslationSchema = {
   },
   modals: {
     addProjectTitle: 'Open Workspace Project',
-    addProjectDesc: 'Select a folder on your machine to attach to Antigravity Codex.',
+    addProjectDesc: 'Select a folder on your machine to attach to Gravity.',
     projectPathLabel: 'Project Folder Path',
     projectPathPlaceholder: '/path/to/my-project',
     projectNameLabel: 'Project Display Name (Optional)',
@@ -136,7 +136,7 @@ export const en: TranslationSchema = {
     clearDesc: 'Clear current conversation messages and start fresh',
   },
   canvas: {
-    title: 'Antigravity Codex Client',
+    title: 'Gravity Client',
     description: 'Fast, minimalist AI coding environment powered directly by your local',
     thinkingTitle: 'Thinking Process',
     thinkingReasoning: 'Reasoning',

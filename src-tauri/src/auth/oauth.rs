@@ -153,7 +153,7 @@ const SUCCESS_HTML: &str = r#"<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Google 授权成功 - Antigravity Codex</title>
+  <title>Google 授权成功 - Gravity</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -224,10 +224,10 @@ const SUCCESS_HTML: &str = r#"<!DOCTYPE html>
       </svg>
     </div>
     <h1>Google 账号授权成功</h1>
-    <p>凭据已成功同步至本地 Antigravity Codex 客户端。<br>您可以关闭此浏览器标签页并返回客户端继续使用。</p>
+    <p>凭据已成功同步至本地 Gravity 客户端。<br>您可以关闭此浏览器标签页并返回客户端继续使用。</p>
     <div class="badge">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      Antigravity Codex Client
+      Gravity Client
     </div>
   </div>
 </body>
@@ -527,4 +527,3 @@ mod tests {
         );
     }
 }
-

@@ -1,12 +1,12 @@
 [package]
-name = "antigravity-codex"
+name = "gravity"
 version = "0.1.0"
 description = "Modern AI coding desktop client powered by agy CLI"
 authors = ["Teddy"]
 edition = "2021"
 
 [lib]
-name = "antigravity_codex_lib"
+name = "gravity_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -5,7 +5,7 @@ The “moved to Trash because it contains malware” dialog is a Gatekeeper trus
 `npm run package` intentionally refuses to create a distributable macOS release unless all of the following hold:
 
 1. `CSC_NAME` selects a **Developer ID Application** certificate (not an Apple Development certificate).
-2. `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` point to an App Store Connect API key authorized to notarize `org.openantigravity.client`.
+2. `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` point to an App Store Connect API key authorized to notarize `com.gravity.client`.
 3. Apple accepts the upload and `xcrun stapler staple` attaches the ticket to the `.app` before the DMG and ZIP are created.
 
 Use secret storage in CI or a local keychain; never put these values in source control or chat. The API key file is read only during the release command and is not copied into the app.

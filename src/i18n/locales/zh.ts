@@ -64,7 +64,7 @@ export const zh: TranslationSchema = {
   },
   modals: {
     addProjectTitle: '打开工作区项目',
-    addProjectDesc: '选择本地目录以接入 Antigravity Codex 编程环境。',
+    addProjectDesc: '选择本地目录以接入 Gravity 编程环境。',
     projectPathLabel: '项目目录路径',
     projectPathPlaceholder: '/Users/username/my-project',
     projectNameLabel: '项目显示名称 (可选)',
@@ -142,7 +142,7 @@ export const zh: TranslationSchema = {
     clearDesc: '清空当前会话消息并开启新对话',
   },
   canvas: {
-    title: 'Antigravity Codex 客户端',
+    title: 'Gravity 客户端',
     description: '基于本地轻量高效的',
     thinkingTitle: '思考过程',
     thinkingReasoning: '深度推理中',

@@ -649,8 +649,8 @@ mod tests {
 
     #[test]
     fn test_db_project_and_session_crud() {
-        let temp_dir = std::env::temp_dir().join(format!("codex_test_{}", uuid::Uuid::new_v4()));
-        let db_path = temp_dir.join("test_codex.db");
+        let temp_dir = std::env::temp_dir().join(format!("gravity_test_{}", uuid::Uuid::new_v4()));
+        let db_path = temp_dir.join("test_gravity.db");
         let db = Database::new(db_path).expect("DB init failed");
 
         // 1. Projects CRUD
@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn account_records_keep_one_active_profile_and_a_recovery_journal() {
         let temp_dir =
-            std::env::temp_dir().join(format!("codex_account_test_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("gravity_account_test_{}", uuid::Uuid::new_v4()));
         let db = Database::new(temp_dir.join("accounts.db")).expect("DB init failed");
 
         let first = db

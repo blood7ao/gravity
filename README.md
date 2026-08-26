@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🪐 Antigravity Codex
+# 🪐 Gravity
 
 **An ultra-fast, minimalist, modern AI coding desktop client built with Tauri 2.0 (Rust) and React 19, powered directly by the official `agy` CLI.**
 
@@ -19,26 +19,26 @@
 
 ## 📖 Introduction
 
-**Antigravity Codex** is a lightweight, responsive, and robust desktop companion designed for developers using the Google Antigravity ecosystem. 
+**Gravity** is a lightweight, responsive, and robust desktop companion designed for developers using the Google Antigravity ecosystem.
 
-Unlike heavy Electron wrappers, Antigravity Codex is engineered from the ground up using **Rust (Tauri 2.0)** and **React 19**, achieving instant application startup with a baseline memory footprint of under **50MB RAM**. It communicates natively with the `agy` CLI via bi-directional NDJSON streaming to deliver a silky-smooth, deterministic coding and reasoning experience.
+Unlike heavy Electron wrappers, Gravity is engineered from the ground up using **Rust (Tauri 2.0)** and **React 19**, achieving instant application startup with a baseline memory footprint of under **50MB RAM**. It communicates natively with the `agy` CLI via bi-directional NDJSON streaming to deliver a silky-smooth, deterministic coding and reasoning experience.
 
 ---
 
 ## ⚡ Core Prerequisite: `agy` CLI
 
 > [!IMPORTANT]
-> **Antigravity Codex requires the Google Antigravity CLI (`agy`) installed on your system.**
+> **Gravity requires the Google Antigravity CLI (`agy`) installed on your system.**
 > The desktop client acts as an intelligent GUI frontend that directly spawns, controls, and streams from the `agy` subprocess.
 
 ### 1. Verify `agy` Installation
-Before launching Antigravity Codex, check that `agy` is installed and accessible:
+Before launching Gravity, check that `agy` is installed and accessible:
 ```bash
 agy --version
 ```
 
 ### 2. Auto-Discovery & Path Resolution
-Antigravity Codex features a built-in cross-platform environment resolver (`env_resolver.rs`) that automatically scans the following locations:
+Gravity features a built-in cross-platform environment resolver (`env_resolver.rs`) that automatically scans the following locations:
 - **macOS**: `/opt/homebrew/bin`, `~/.local/bin`, `~/.gemini/antigravity/bin`, `~/.cargo/bin`, `/usr/local/bin`
 - **Windows**: `%USERPROFILE%\.local\bin`, `%USERPROFILE%\.cargo\bin`, system `%PATH%`
 
@@ -68,7 +68,7 @@ If `agy` is located in a custom directory, ensure that directory is exported to 
 - **1-Click Accept & Revert**: Granular control over file changes before committing them to your workspace.
 - **Live Brain Watcher**: Detects and displays real-time artifact updates (`notify` filesystem watcher).
 
-### 💬 Codex-Style Prompt Hub
+### 💬 Gravity Prompt Hub
 - **Floating Command Hub**: Clean, distraction-free floating command hub with auto-resizing input.
 - **Slash Commands**: Quick mode switching and operations (`/plan`, `/act`, `/sandbox`, `/effort`, `/goal`, `/clear`).
 - **`@` Workspace Mentions**: Fast fuzzy-matched file and directory symbol mentions.
@@ -127,8 +127,8 @@ Ensure you have the following installed on your machine:
 ### Clone & Install
 
 ```bash
-git clone https://github.com/your-username/antigravity-codex.git
-cd antigravity-codex
+git clone https://github.com/blood7ao/gravity.git
+cd gravity
 
 # Install node dependencies
 npm install
@@ -188,7 +188,7 @@ Type `/` in the prompt input to bring up the command menu:
 ## 📂 Project Structure
 
 ```
-antigravity-client/
+gravity/
 ├── src/                          # React 19 Frontend
 │   ├── components/
 │   │   ├── canvas/               # Chat canvas, ThinkingBlock, Markdown, Action pills
@@ -219,7 +219,7 @@ antigravity-client/
 
 ## 🛡️ Process Safety & Stability
 
-Antigravity Codex puts developer safety first:
+Gravity puts developer safety first:
 - **No Orphan CLI Processes**: When you close the app or press stop, child processes are instantly cleaned up via Unix Process Groups (`libc::killpg`) or Windows Job Objects (`TerminateJobObject`).
 - **Local SQLite Persistence**: All sessions, conversation histories, and preferences are saved locally on your machine.
 - **Environment Auto-Discovery**: Automatically repairs missing shell PATH environments (detects Homebrew, NVM, Rustup, and local bins).

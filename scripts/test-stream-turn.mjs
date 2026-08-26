@@ -43,7 +43,7 @@ setTimeout(() => {
   console.log('TX: Sending test prompt JSON');
   const userMsg = JSON.stringify({
     event: 'user',
-    message: { content: 'Echo back the word ANTIGRAVITY_OK' },
+    message: { content: 'Echo back the word GRAVITY_OK' },
   }) + '\n';
   agy.stdin.write(userMsg);
 }, 1000);

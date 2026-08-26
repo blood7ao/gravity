@@ -22,7 +22,6 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { ProjectDropdown } from './ProjectDropdown';
 import { PromptHub } from '@/components/prompt/PromptHub';
 import { Badge } from '@/components/ui/Badge';
-import { AntigravityLogo } from '@/components/ui/AntigravityLogo';
 import { Message } from '@/types';
 
 function AssistantActionBar({
@@ -396,7 +395,7 @@ export function ChatCanvas() {
                       </div>
                     )}
 
-                    {/* Codex-style Edited Files Summary Card */}
+                    {/* Edited files summary card */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <EditedFilesCard toolCalls={msg.toolCalls} />
                     )}

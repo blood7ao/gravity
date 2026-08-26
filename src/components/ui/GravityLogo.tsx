@@ -1,16 +1,16 @@
 import React from 'react';
 
-interface AntigravityLogoProps {
+interface GravityLogoProps {
   className?: string;
   size?: number | string;
   withSquircle?: boolean;
 }
 
-export function AntigravityLogo({
+export function GravityLogo({
   className = 'w-6 h-6',
   size,
   withSquircle = false,
-}: AntigravityLogoProps) {
+}: GravityLogoProps) {
   const style = size ? { width: size, height: size } : undefined;
 
   return (
@@ -48,7 +48,7 @@ export function AntigravityLogo({
         />
       )}
 
-      {/* Inverted Antigravity Rainbow Arch / Gravitational Curve */}
+      {/* Inverted rainbow arch / gravitational curve */}
       <path
         d="M 26 26 C 30 52 40 76 50 76 C 60 76 70 52 74 26 C 75 22 68 20 65 25 C 60 44 54 58 50 58 C 46 58 40 44 35 25 C 32 20 25 22 26 26 Z"
         fill="url(#agy-rainbow-grad)"

@@ -54,37 +54,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "antigravity-codex"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "futures",
- "keyring",
- "libc",
- "notify",
- "rand 0.8.8",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "similar",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tokio",
- "url",
- "uuid",
- "walkdir",
- "winapi",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1310,6 +1279,37 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "gravity"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "futures",
+ "keyring",
+ "libc",
+ "notify",
+ "rand 0.8.8",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "similar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tokio",
+ "url",
+ "uuid",
+ "walkdir",
+ "winapi",
 ]
 
 [[package]]

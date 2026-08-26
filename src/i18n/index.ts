@@ -9,9 +9,13 @@ const dictionaries: Record<Language, TranslationSchema> = {
   zh,
 };
 
+const LANGUAGE_STORAGE_KEY = 'gravity_language';
+const LEGACY_LANGUAGE_STORAGE_KEY = 'antigravity_language';
+
 function getInitialLanguage(): Language {
   try {
-    const saved = localStorage.getItem('antigravity_language');
+    const saved =
+      localStorage.getItem(LANGUAGE_STORAGE_KEY) || localStorage.getItem(LEGACY_LANGUAGE_STORAGE_KEY);
     if (saved === 'zh' || saved === 'en') {
       return saved;
     }
@@ -43,7 +47,7 @@ export const useI18n = create<I18nState>((set, get) => {
     t: dictionaries[initialLang],
     setLanguage: (lang: Language) => {
       try {
-        localStorage.setItem('antigravity_language', lang);
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
         invoke('set_setting', { key: 'language', value: lang }).catch(() => {});
       } catch (e) {
         console.warn('Failed to save language preference:', e);

@@ -58,10 +58,47 @@ pub struct PastedImageInfo {
     pub file_name: String,
 }
 
+const APP_DATA_DIR_NAME: &str = "gravity";
+const LEGACY_APP_DATA_DIR_NAME: &str = "antigravity-codex";
+
 fn app_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .map(|d| d.join("antigravity-codex"))
-        .unwrap_or_else(|| PathBuf::from("./data"))
+    let Some(base_dir) = dirs::data_dir() else {
+        return PathBuf::from("./data");
+    };
+
+    let current_dir = base_dir.join(APP_DATA_DIR_NAME);
+    let legacy_dir = base_dir.join(LEGACY_APP_DATA_DIR_NAME);
+    if !current_dir.exists() && legacy_dir.exists() {
+        if let Err(error) = fs::rename(&legacy_dir, &current_dir) {
+            eprintln!("Failed to migrate legacy Gravity data directory: {error}");
+            return legacy_dir;
+        }
+    }
+
+    current_dir
+}
+
+fn database_path(data_dir: &Path) -> PathBuf {
+    let current_path = data_dir.join("gravity.db");
+    let legacy_path = data_dir.join("codex.db");
+    if !current_path.exists() && legacy_path.exists() {
+        if let Err(error) = fs::rename(&legacy_path, &current_path) {
+            eprintln!("Failed to migrate the legacy Gravity database: {error}");
+            return legacy_path;
+        }
+
+        for suffix in ["-wal", "-shm"] {
+            let old_sidecar = data_dir.join(format!("codex.db{suffix}"));
+            let new_sidecar = data_dir.join(format!("gravity.db{suffix}"));
+            if old_sidecar.exists() {
+                if let Err(error) = fs::rename(&old_sidecar, &new_sidecar) {
+                    eprintln!("Failed to migrate the legacy Gravity database sidecar: {error}");
+                }
+            }
+        }
+    }
+
+    current_path
 }
 
 fn pasted_images_dir() -> PathBuf {
@@ -1142,7 +1179,7 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 pub fn run() {
     let app_data_dir = app_data_dir();
 
-    let db_path = app_data_dir.join("codex.db");
+    let db_path = database_path(&app_data_dir);
     let db = match Database::new(db_path) {
         Ok(d) => Arc::new(d),
         Err(e) => {

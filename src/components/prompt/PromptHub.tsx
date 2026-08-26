@@ -442,7 +442,7 @@ export function PromptHub() {
         onSelectFile={handleSelectMentionFile}
       />
 
-      {/* Codex-Style Rounded Prompt Box */}
+      {/* Gravity rounded prompt box */}
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#18181b] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 focus-within:border-zinc-400 dark:focus-within:border-zinc-600 focus-within:shadow-md transition-all p-3.5">
         {/* Project Selector Pill */}
         <div className="relative mb-2 inline-block" ref={projectDropdownRef}>
@@ -706,7 +706,7 @@ export function PromptHub() {
                 </span>
               </button>
 
-              {/* Exact Codex / ChatGPT-Style Permission Popover */}
+                      {/* Permission popover */}
               {isPermissionMenuOpen && (
                 <div className="absolute bottom-9 left-0 w-[350px] md:w-[380px] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#18181b] shadow-2xl p-4 z-40 space-y-2 font-sans select-none animate-in fade-in zoom-in-95 duration-100">
                   {/* Top Header */}

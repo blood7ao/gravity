@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🪐 Antigravity Codex
+# 🪐 Gravity
 
 **基于 Tauri 2.0 (Rust) 与 React 19 构建的超轻量、极速 AI 编程桌面客户端，直接集成官方 `agy` CLI。**
 
@@ -19,26 +19,26 @@
 
 ## 📖 项目简介
 
-**Antigravity Codex** 是一款专为 Google Antigravity 生态打造的现代化轻量级 AI 编程桌面客户端。
+**Gravity** 是一款专为 Google Antigravity 生态打造的现代化轻量级 AI 编程桌面客户端。
 
-不同于占用大量资源的 Electron 包装壳，Antigravity Codex 采用 **Rust (Tauri 2.0)** 和 **React 19** 底层架构，实现毫秒级启动与 **低于 50MB 的基础内存占用**。它通过双向 NDJSON 流直接驱动 `agy` 命令行子进程，为开发者带来丝滑、可控、高响应度的智能辅助编程体验。
+不同于占用大量资源的 Electron 包装壳，Gravity 采用 **Rust (Tauri 2.0)** 和 **React 19** 底层架构，实现毫秒级启动与 **低于 50MB 的基础内存占用**。它通过双向 NDJSON 流直接驱动 `agy` 命令行子进程，为开发者带来丝滑、可控、高响应度的智能辅助编程体验。
 
 ---
 
 ## ⚡ 核心前置依赖：`agy` CLI 说明
 
 > [!IMPORTANT]
-> **Antigravity Codex 依赖本机已安装的 Google Antigravity CLI (`agy`) 命令行工具。**
+> **Gravity 依赖本机已安装的 Google Antigravity CLI (`agy`) 命令行工具。**
 > 桌面客户端本质上是 `agy` 的图形化交互前端，通过 Rust 子进程异步管理、双向 NDJSON 管道与 `agy` 进行高效通信与状态驱动。
 
 ### 1. 验证 `agy` 安装
-在运行或使用 Antigravity Codex 前，请确保您的终端中可以正常调用 `agy`：
+在运行或使用 Gravity 前，请确保您的终端中可以正常调用 `agy`：
 ```bash
 agy --version
 ```
 
 ### 2. 自动探测与环境变量自愈
-Antigravity Codex 内部集成了跨平台环境解析器（`env_resolver.rs`），桌面端启动时会自动扫描并识别以下标准路径中的 `agy` / `agy.exe`：
+Gravity 内部集成了跨平台环境解析器（`env_resolver.rs`），桌面端启动时会自动扫描并识别以下标准路径中的 `agy` / `agy.exe`：
 - **macOS**：`/opt/homebrew/bin`、`~/.local/bin`、`~/.gemini/antigravity/bin`、`~/.cargo/bin`、`/usr/local/bin`
 - **Windows**：`%USERPROFILE%\.local\bin`、`%USERPROFILE%\.cargo\bin` 以及系统 `%PATH%`
 
@@ -127,8 +127,8 @@ Antigravity Codex 内部集成了跨平台环境解析器（`env_resolver.rs`）
 ### 克隆并安装依赖
 
 ```bash
-git clone https://github.com/your-username/antigravity-codex.git
-cd antigravity-codex
+git clone https://github.com/blood7ao/gravity.git
+cd gravity
 
 # 安装前端依赖
 npm install
@@ -187,7 +187,7 @@ src-tauri/target/release/bundle/
 ## 📂 项目结构
 
 ```
-antigravity-client/
+gravity/
 ├── src/                          # React 19 前端工程
 │   ├── components/
 │   │   ├── canvas/               # 对话画布、思维链折叠、Markdown 与行动胶囊
@@ -219,7 +219,7 @@ antigravity-client/
 ## 🛡️ 安全与稳定性设计
 
 - **零孤儿进程**：应用退出或用户中断请求时，通过 Unix Process Groups (`libc::killpg`) 或 Windows Job Objects (`TerminateJobObject`) 级联回收所有子进程。
-- **数据完全本地化**：所有对话历史、项目配置均存放在本地嵌入式 SQLite (`antigravity.db`) 中。
+- **数据完全本地化**：所有对话历史、项目配置均存放在本地嵌入式 SQLite (`gravity.db`) 中。
 - **环境路径自愈**：自动检测并补全 macOS / Windows 下常见的开发路径（Homebrew、NVM、Cargo、本地 bin）。
 
 ---

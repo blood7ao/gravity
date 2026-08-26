@@ -5,6 +5,9 @@ import { flushSync } from 'react-dom';
 export type Theme = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
 
+const THEME_STORAGE_KEY = 'gravity_theme';
+const LEGACY_THEME_STORAGE_KEY = 'antigravity_theme';
+
 export type ThemeTransitionEvent =
   | React.MouseEvent<HTMLElement>
   | MouseEvent
@@ -29,7 +32,8 @@ function getSystemTheme(): ResolvedTheme {
 
 function getInitialTheme(): Theme {
   try {
-    const saved = localStorage.getItem('antigravity_theme') as Theme | null;
+    const saved = (localStorage.getItem(THEME_STORAGE_KEY) ||
+      localStorage.getItem(LEGACY_THEME_STORAGE_KEY)) as Theme | null;
     if (saved === 'light' || saved === 'dark' || saved === 'system') {
       return saved;
     }
@@ -174,7 +178,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       const currentResolved = get().resolvedTheme;
 
       try {
-        localStorage.setItem('antigravity_theme', newTheme);
+        localStorage.setItem(THEME_STORAGE_KEY, newTheme);
         invoke('set_setting', { key: 'theme', value: newTheme }).catch(() => {});
       } catch (e) {
         console.warn('Failed to persist theme:', e);
