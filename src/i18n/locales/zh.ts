@@ -10,6 +10,7 @@ export const zh: TranslationSchema = {
     cancel: '取消',
     confirm: '确认',
     save: '保存',
+    saved: '已保存',
     delete: '删除',
     close: '关闭',
     browse: '浏览',
@@ -24,6 +25,8 @@ export const zh: TranslationSchema = {
     themeDark: '深色模式',
     themeLight: '白色模式',
     themeSystem: '跟随系统',
+    general: '通用',
+    network: '网络',
   },
   header: {
     noProject: '未选择工作区项目',
@@ -56,11 +59,14 @@ export const zh: TranslationSchema = {
       const map: Record<string, string> = { low: '低', medium: '中', high: '高' };
       return `${map[effort] || effort}思考强度`;
     },
+    statusRunning: '进行中',
+    statusPlanReady: '方案就绪',
+    statusIncomplete: '未完成',
     permissions: '权限策略',
     permAuto: '自动',
     permConfirm: '确认',
     permSandbox: '沙箱',
-    clientSettings: '客户端设置与环境',
+    clientSettings: '设置',
   },
   modals: {
     addProjectTitle: '打开工作区项目',
@@ -81,7 +87,27 @@ export const zh: TranslationSchema = {
     languageSettingsDesc: '选择应用程序的显示语言。',
     themeSettingsLabel: '主题外观 (Theme)',
     themeSettingsDesc: '选择明亮白色主题、暗黑主题或跟随系统。',
+    permissionSettingsTitle: '权限策略 (Permission Policy)',
+    permissionSettingsDesc: '配置 Antigravity 执行工具和操作时的权限批准方式。可在对话输入框中随时快捷切换。',
+    permAutoTitle: '自动执行 (Auto-Approve)',
+    permAutoDesc: '无需每次确认，自动批准执行所有工具与命令（完全访问）',
+    permConfirmTitle: '请求批准 (Ask First)',
+    permConfirmDesc: '每次执行命令或修改文件前均需手动确认（最安全）',
+    permSandboxTitle: '智能沙箱 (Sandbox)',
+    permSandboxDesc: '仅对检测到的敏感或高风险操作请求批准',
+    proxySettingsTitle: '网络代理 (Proxy Routing)',
+    proxySettingsDesc: '参考 AIProxyLauncher 原理，为 agy 会话、Google 授权及官方应用注入代理路由，localhost 保持直连。',
+    proxyEnableLabel: '启用代理路由',
+    proxyHostLabel: '代理主机 (Host)',
+    proxyPortLabel: '代理端口 (Port)',
+    proxyTestBtn: '测试连接',
+    proxyTesting: '检测中...',
+    proxyReachable: (host: string, port: number) => `代理 ${host}:${port} 已就绪`,
+    proxyUnreachable: (host: string, port: number) => `未连接到代理 ${host}:${port}`,
+    proxySaveSuccess: '代理设置已保存并生效',
+    proxyHelpNote: '不解密 HTTPS；自动注入 HTTP/HTTPS/SOCKS 环境变量并配置 NO_PROXY 保持本地直连。',
   },
+
   prompt: {
     inputPlaceholder: (projectName?: string) =>
       projectName
@@ -149,17 +175,19 @@ export const zh: TranslationSchema = {
     thinkingHide: '收起',
     thinkingShow: '展开',
     thinkingElapsed: (seconds: number) => {
-      if (seconds < 60) return `耗时 ${Math.max(1, Math.round(seconds))}秒`;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
-      return secs === 0 ? `耗时 ${mins}分钟` : `耗时 ${mins}分钟 ${secs}秒`;
+      const totalSecs = Math.round(seconds);
+      if (totalSecs < 60) return `思考了 ${Math.max(1, totalSecs)}秒`;
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
+      return secs === 0 ? `思考了 ${mins}分钟` : `思考了 ${mins}分钟 ${secs}秒`;
     },
     thinkingActive: (seconds?: number) =>
       seconds && seconds > 0 ? `思考中 (${Math.round(seconds)}秒)…` : '思考中…',
     turnElapsed: (seconds: number) => {
-      if (seconds < 60) return `${Math.max(1, Math.round(seconds))}秒`;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
+      const totalSecs = Math.round(seconds);
+      if (totalSecs < 60) return `${Math.max(1, totalSecs)}秒`;
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
       return secs === 0 ? `${mins}分` : `${mins}分${secs}秒`;
     },
     editedFiles: (count: number) => `已编辑 ${count} 个文件`,
@@ -169,6 +197,9 @@ export const zh: TranslationSchema = {
     retry: '重新生成',
     like: '有帮助',
     dislike: '未解决',
+    turnInterrupted: '任务执行中断（检测到超时或异常退出）',
+    continueTask: '继续任务',
+    continueTaskPrompt: '请继续完成刚才未完成的任务。',
     exploredFiles: (count: number) => `已检索 ${count} 个文件 / 搜索`,
     details: '详情',
     collapse: '收起',
@@ -215,6 +246,8 @@ export const zh: TranslationSchema = {
     viewRawOutput: '查看原始 CLI 输出',
     rawLogsTitle: '原始 CLI 输出与流日志',
     closeInspector: '关闭审查面板',
+    maximizeInspector: '最大化 / 全屏面板',
+    restoreInspector: '还原面板大小',
     artifactsTitle: 'Brain 产物与分析报告',
     noArtifacts: '当前会话尚未生成任何产物报告。',
     noPlan: '暂无活动的实施规划方案',

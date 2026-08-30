@@ -52,6 +52,7 @@ export interface Session {
   effort: ReasoningEffort;
   model?: string;
   agent?: string;
+  status?: 'running' | 'plan_ready' | 'incomplete' | 'completed';
 }
 
 export interface ToolCall {
@@ -59,6 +60,7 @@ export interface ToolCall {
   tool_name: string;
   tool_summary?: string;
   tool_args?: Record<string, any>;
+  tool_result?: string;
   duration_seconds?: number;
   state: 'RUNNING' | 'DONE' | 'ERROR';
 }
@@ -77,12 +79,18 @@ export interface ImageAttachment {
   filePath?: string;
 }
 
+export type MessagePart =
+  | { type: 'thinking'; thinking: string; durationSeconds?: number }
+  | { type: 'tools'; toolCalls: ToolCall[] }
+  | { type: 'text'; content: string };
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   thinking?: string;
   toolCalls?: ToolCall[];
+  parts?: MessagePart[];
   created_at: number;
   completed_at?: number;
   duration_seconds?: number;
@@ -110,6 +118,14 @@ export interface ModifiedFile {
   original_content: string;
   modified_content: string;
   status: 'modified' | 'created' | 'deleted';
+  original_exists?: boolean;
+  can_revert?: boolean;
+}
+
+export interface FileSnapshot {
+  exists: boolean;
+  content: string | null;
+  can_revert: boolean;
 }
 
 export type PermissionMode = 'auto-approve' | 'ask-first' | 'sandbox';
@@ -123,4 +139,10 @@ export interface RawLogEntry {
   raw: string;
   step_index?: number;
   summary?: string;
+}
+
+export interface ProxyConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
 }

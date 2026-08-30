@@ -1,8 +1,9 @@
 import React from 'react';
 import { FileCode, RotateCcw } from 'lucide-react';
-import { ToolCall } from '@/types';
+import { FileSnapshot, ToolCall } from '@/types';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { useI18n } from '@/i18n';
+import { invoke } from '@tauri-apps/api/core';
 
 interface FileDiffSummary {
   filePath: string;
@@ -19,7 +20,10 @@ export function EditedFilesCard({ toolCalls }: EditedFilesCardProps) {
   const { t } = useI18n();
   const {
     activeProject,
+    modifiedFiles,
     addModifiedFile,
+    setModifiedFiles,
+    setActiveDiffFile,
     setInspectorTab,
     toggleInspector,
   } = useWorkspaceStore();
@@ -40,21 +44,29 @@ export function EditedFilesCard({ toolCalls }: EditedFilesCardProps) {
 
   for (const tc of editTools) {
     let rawPath = tc.tool_args?.TargetFile || tc.tool_args?.file_path || '';
-    if (typeof rawPath === 'string') {
-      rawPath = rawPath.replace(/^"|"$/g, '').trim();
+    if (typeof rawPath !== 'string') {
+      rawPath = typeof rawPath === 'object' ? JSON.stringify(rawPath) : String(rawPath);
     }
+    rawPath = rawPath.replace(/^"|"$/g, '').trim();
     if (!rawPath) continue;
 
     let adds = 0;
     let dels = 0;
 
     if (tc.tool_name === 'replace_file_content') {
-      const rep = tc.tool_args?.ReplacementContent || '';
-      const tar = tc.tool_args?.TargetContent || '';
+      let rep = tc.tool_args?.ReplacementContent || '';
+      let tar = tc.tool_args?.TargetContent || '';
+
+      if (typeof rep !== 'string') rep = typeof rep === 'object' ? JSON.stringify(rep) : String(rep);
+      if (typeof tar !== 'string') tar = typeof tar === 'object' ? JSON.stringify(tar) : String(tar);
+
       adds = rep ? rep.split('\n').length : 0;
       dels = tar ? tar.split('\n').length : 0;
     } else if (tc.tool_name === 'write_to_file') {
-      const code = tc.tool_args?.CodeContent || '';
+      let code = tc.tool_args?.CodeContent || '';
+
+      if (typeof code !== 'string') code = typeof code === 'object' ? JSON.stringify(code) : String(code);
+
       adds = code ? code.split('\n').length : 0;
       dels = 0;
     }
@@ -87,23 +99,84 @@ export function EditedFilesCard({ toolCalls }: EditedFilesCardProps) {
   const totalAdditions = fileList.reduce((acc, f) => acc + f.additions, 0);
   const totalDeletions = fileList.reduce((acc, f) => acc + f.deletions, 0);
 
-  const handleOpenFileDiff = (filePath: string) => {
-    addModifiedFile(filePath);
-    setInspectorTab('diff');
-    toggleInspector(true);
-  };
-
-  const handleReviewAll = () => {
-    if (fileList.length > 0) {
-      addModifiedFile(fileList[0].filePath);
+  const loadAndOpenDiff = async (filePath: string) => {
+    try {
+      const tracked = useWorkspaceStore.getState().modifiedFiles.find((file) => file.path === filePath);
+      if (tracked) {
+        setActiveDiffFile(tracked);
+      } else {
+        const [snapshot, modified] = await Promise.all([
+          invoke<FileSnapshot | null>('get_file_snapshot', { filePath }).catch(() => null),
+          invoke<string>('read_file_content', { filePath }).catch(() => ''),
+        ]);
+        const original = snapshot?.content ?? (await invoke<string>('git_show_file', { filePath }).catch(() => ''));
+        addModifiedFile(filePath, original, modified, snapshot?.exists, snapshot?.can_revert ?? false);
+        const added = useWorkspaceStore.getState().modifiedFiles.find((file) => file.path === filePath);
+        setActiveDiffFile(added || null);
+      }
+    } catch {
+      addModifiedFile(filePath, undefined, undefined, undefined, false);
     }
     setInspectorTab('diff');
     toggleInspector(true);
   };
 
-  const handleUndo = () => {
-    handleReviewAll();
+  const handleOpenFileDiff = (filePath: string) => {
+    loadAndOpenDiff(filePath);
   };
+
+  const handleReviewAll = async () => {
+    // Load all files in parallel
+    await Promise.all(
+      fileList.map(async (item) => {
+        try {
+          const tracked = useWorkspaceStore.getState().modifiedFiles.find((file) => file.path === item.filePath);
+          if (tracked) return;
+          const [snapshot, modified] = await Promise.all([
+            invoke<FileSnapshot | null>('get_file_snapshot', { filePath: item.filePath }).catch(() => null),
+            invoke<string>('read_file_content', { filePath: item.filePath }).catch(() => ''),
+          ]);
+          const original = snapshot?.content ?? (await invoke<string>('git_show_file', { filePath: item.filePath }).catch(() => ''));
+          addModifiedFile(item.filePath, original, modified, snapshot?.exists, snapshot?.can_revert ?? false);
+        } catch {
+          addModifiedFile(item.filePath, undefined, undefined, undefined, false);
+        }
+      })
+    );
+    setInspectorTab('diff');
+    toggleInspector(true);
+  };
+
+  const handleUndo = async () => {
+    const trackedFiles = useWorkspaceStore.getState().modifiedFiles;
+    const revertedPaths: string[] = [];
+    for (const item of fileList) {
+      const tracked = trackedFiles.find((file) => file.path === item.filePath);
+      if (!tracked?.can_revert) continue;
+      try {
+        if (tracked.original_exists === false) {
+          await invoke('remove_file_content', { filePath: item.filePath });
+        } else {
+          await invoke('write_file_content', {
+            filePath: item.filePath,
+            content: tracked.original_content,
+          });
+        }
+        revertedPaths.push(item.filePath);
+      } catch (e) {
+        console.error('Failed to revert file:', item.filePath, e);
+      }
+    }
+    const remaining = useWorkspaceStore
+      .getState()
+      .modifiedFiles.filter((file) => !revertedPaths.includes(file.path));
+    setModifiedFiles(remaining);
+    setActiveDiffFile(remaining[0] || null);
+  };
+
+  const canUndo = fileList.every((item) =>
+    modifiedFiles.some((file) => file.path === item.filePath && file.can_revert)
+  );
 
   return (
     <div className="my-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/70 p-3.5 shadow-2xs font-sans">
@@ -138,7 +211,8 @@ export function EditedFilesCard({ toolCalls }: EditedFilesCardProps) {
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleUndo}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            disabled={!canUndo}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition disabled:cursor-not-allowed disabled:opacity-40"
             title={t.canvas.undo}
           >
             <span>{t.canvas.undo}</span>

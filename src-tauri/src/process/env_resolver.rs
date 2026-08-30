@@ -1,8 +1,9 @@
+use crate::process::proxy::ProxyConfig;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 
-pub fn resolve_system_env() -> HashMap<String, String> {
+pub fn resolve_system_env(proxy: Option<&ProxyConfig>) -> HashMap<String, String> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
     #[cfg(target_os = "macos")]
@@ -69,5 +70,10 @@ pub fn resolve_system_env() -> HashMap<String, String> {
         }
     }
 
+    if let Some(proxy_cfg) = proxy {
+        proxy_cfg.apply_to_env(&mut envs);
+    }
+
     envs
 }
+

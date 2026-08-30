@@ -127,6 +127,7 @@ body {
   font-synthesis: none;
   user-select: none;
   overflow: hidden;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
 code, pre, kbd, samp {
@@ -155,9 +156,23 @@ code, pre, kbd, samp {
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Hide scrollbars for tab bars, pills, and compact headers */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /* Code block styles */
-pre {
-  background-color: #f4f4f5 !important;
+pre:not([class*="!bg-"]) {
+  background-color: #f4f4f5;
   color: #18181b;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 8px;
@@ -165,8 +180,8 @@ pre {
   overflow-x: auto;
 }
 
-.dark pre {
-  background-color: #121215 !important;
+.dark pre:not([class*="!bg-"]) {
+  background-color: #121215;
   color: #f4f4f5;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -187,26 +202,4 @@ pre {
   animation: pulse-glow 3s infinite ease-in-out;
 }
 
-/* View Transition Theme Circular Reveal */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-
-::view-transition-old(root) {
-  z-index: 1;
-}
-
-::view-transition-new(root) {
-  z-index: 9999;
-}
-
-.dark::view-transition-old(root) {
-  z-index: 1;
-}
-
-.dark::view-transition-new(root) {
-  z-index: 9999;
-}
 

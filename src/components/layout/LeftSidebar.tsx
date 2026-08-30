@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SquarePen,
   Folder,
@@ -6,6 +6,8 @@ import {
   Trash2,
   Settings,
   ShieldCheck,
+  ShieldAlert,
+  Hand,
   FolderOpen,
   Languages,
   Sun,
@@ -14,18 +16,30 @@ import {
   MoreHorizontal,
   History,
   Clock,
+  Globe,
+  Check,
+  RotateCw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useThemeStore, Theme } from '@/stores/useThemeStore';
+import { useProxyStore } from '@/stores/useProxyStore';
 import { useI18n, Language } from '@/i18n';
-import { Project, Session, Message, ArtifactInfo } from '@/types';
+import { Project, Session, Message, ToolCall, MessagePart, ArtifactInfo } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { formatTimeAgo, formatTimeAgoShort, mergeTranscriptText, deduplicateConsecutiveParagraphs, sanitizeMarkdownContent } from '@/lib/utils';
+import {
+  formatTimeAgo,
+  formatTimeAgoShort,
+  mergeTranscriptText,
+  deduplicateConsecutiveParagraphs,
+  sanitizeMarkdownContent,
+  parseTranscriptStepsToMessages,
+} from '@/lib/utils';
 
 export function LeftSidebar() {
   const { t, language, setLanguage } = useI18n();
@@ -54,19 +68,74 @@ export function LeftSidebar() {
     setAgent,
     setMessages,
     setRawTranscriptText,
+    isStreaming,
+    setIsStreaming,
+    setStatusMessage,
   } = useSessionStore();
 
+  const {
+    enabled: proxyEnabled,
+    host: proxyHost,
+    port: proxyPort,
+    isReachable: proxyIsReachable,
+    isTesting: proxyIsTesting,
+    saveConfig: saveProxyConfig,
+    testConnection: testProxyConnection,
+    toggleEnabled: toggleProxyEnabled,
+  } = useProxyStore();
+
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
   const [expandedProjectSessions, setExpandedProjectSessions] = useState<Record<string, boolean>>({});
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [inputHost, setInputHost] = useState(proxyHost);
+  const [inputPort, setInputPort] = useState(proxyPort.toString());
+  const [proxySavedMessage, setProxySavedMessage] = useState(false);
+
+  const refreshActiveSessions = async () => {
+    try {
+      const list = await invoke<string[]>('list_active_sessions');
+      setActiveSessionIds(new Set(list || []));
+    } catch (e) {
+      console.warn('Failed to list active sessions:', e);
+    }
+  };
+
+  useEffect(() => {
+    setInputHost(proxyHost);
+    setInputPort(proxyPort.toString());
+  }, [proxyHost, proxyPort, isSettingsModalOpen]);
+
 
   const toggleExpandSessions = (projId: string) => {
     setExpandedProjectSessions((prev) => ({
       ...prev,
       [projId]: !prev[projId],
     }));
+  };
+
+  const handleSaveProxy = async () => {
+    try {
+      await saveProxyConfig({
+        enabled: proxyEnabled,
+        host: inputHost,
+        port: parseInt(inputPort, 10) || 7890,
+      });
+      setProxySavedMessage(true);
+      setTimeout(() => setProxySavedMessage(false), 2000);
+    } catch (e) {
+      console.error('Failed to save proxy:', e);
+    }
+  };
+
+  const handleTestProxy = async () => {
+    await testProxyConnection(inputHost, parseInt(inputPort, 10) || 7890);
+  };
+
+  const handleToggleProxy = async () => {
+    await toggleProxyEnabled();
   };
 
   // Load projects from database
@@ -82,6 +151,7 @@ export function LeftSidebar() {
     }
   };
 
+
   // Load all sessions from database
   const loadSessions = async () => {
     try {
@@ -94,6 +164,50 @@ export function LeftSidebar() {
 
   useEffect(() => {
     loadProjects();
+    refreshActiveSessions();
+
+    const interval = setInterval(() => {
+      refreshActiveSessions();
+    }, 3000);
+
+    const unlistenPresencePromise = listen<{ conversation_id: string; is_active: boolean }>(
+      'session-presence-update',
+      (event) => {
+        const { conversation_id, is_active } = event.payload;
+        setActiveSessionIds((prev) => {
+          const next = new Set(prev);
+          if (is_active) {
+            next.add(conversation_id);
+          } else {
+            next.delete(conversation_id);
+          }
+          return next;
+        });
+        loadSessions();
+      }
+    );
+
+    const unlistenTranscriptPromise = listen<{ conversation_id: string; steps: any[]; is_active: boolean }>(
+      'brain-transcript-update',
+      (event) => {
+        const { conversation_id, is_active } = event.payload;
+        setActiveSessionIds((prev) => {
+          const next = new Set(prev);
+          if (is_active) {
+            next.add(conversation_id);
+          } else {
+            next.delete(conversation_id);
+          }
+          return next;
+        });
+      }
+    );
+
+    return () => {
+      clearInterval(interval);
+      unlistenPresencePromise.then((unlisten) => unlisten());
+      unlistenTranscriptPromise.then((unlisten) => unlisten());
+    };
   }, []);
 
   useEffect(() => {
@@ -103,6 +217,7 @@ export function LeftSidebar() {
   const handlePickFolder = async () => {
     try {
       const res = await invoke<string | null>('pick_folder');
+      if (res === null) return;
       if (res && typeof res === 'string') {
         setNewProjectPath(res);
         const folderName = res.split(/[/\\]/).filter(Boolean).pop() || 'Project';
@@ -153,6 +268,14 @@ export function LeftSidebar() {
     e.stopPropagation();
     try {
       await invoke('remove_project', { id });
+
+      let nextProjects = projects.filter((p) => p.id !== id);
+      setProjects(nextProjects);
+
+      if (activeProject?.id === id) {
+        setActiveProject(nextProjects.length > 0 ? nextProjects[0] : null);
+      }
+
       await loadProjects();
     } catch (err) {
       console.error('Failed to remove project:', err);
@@ -163,7 +286,10 @@ export function LeftSidebar() {
     clearSession();
   };
 
+  const latestSelectedSessionRef = useRef<string | null>(null);
+
   const handleSelectSession = async (s: Session, proj?: Project) => {
+    latestSelectedSessionRef.current = s.id;
     setConversationId(s.id);
     if (s.mode) setMode(s.mode);
     if (s.effort) setEffort(s.effort);
@@ -180,125 +306,27 @@ export function LeftSidebar() {
     }
 
     try {
+      // Determine if session is actively running in CLI / background
+      const isAct =
+        activeSessionIds.has(s.id) ||
+        (await invoke<boolean>('is_session_active', { conversationId: s.id }).catch(() => false));
+
+      setIsStreaming(isAct);
+      if (isAct) {
+        setStatusMessage('Agent running (CLI)');
+      } else {
+        setStatusMessage(null);
+      }
+
       // Load transcript steps
       const steps = await invoke<any[]>('get_conversation_transcript', {
         conversationId: s.id,
       });
 
+      if (latestSelectedSessionRef.current !== s.id) return;
+
       if (steps && steps.length > 0) {
-        const loadedMessages: Message[] = [];
-        let currentAssistantMsg: Message | null = null;
-
-        for (const step of steps) {
-          if (step.type === 'USER_INPUT') {
-            if (currentAssistantMsg) {
-              if (currentAssistantMsg.content) {
-                currentAssistantMsg.content = deduplicateConsecutiveParagraphs(currentAssistantMsg.content);
-              }
-              const dur = currentAssistantMsg.completed_at
-                ? Math.max(1, Math.round((currentAssistantMsg.completed_at - currentAssistantMsg.created_at) / 1000))
-                : undefined;
-              currentAssistantMsg.duration_seconds = dur;
-              loadedMessages.push(currentAssistantMsg);
-              currentAssistantMsg = null;
-            }
-            let rawContent = step.content || '';
-            const match = rawContent.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
-            if (match) {
-              rawContent = match[1].trim();
-            } else {
-              // Strip metadata tags if present
-              rawContent = rawContent
-                .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/g, '')
-                .replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/g, '')
-                .trim();
-            }
-
-            // Skip raw checkpoint blocks if they accidentally appear as user inputs
-            if (rawContent.startsWith('{{ CHECKPOINT') || rawContent.includes('**The earlier parts of this conversation have been truncated')) {
-              continue;
-            }
-
-            loadedMessages.push({
-              id: `user-${step.step_index ?? Date.now()}`,
-              role: 'user',
-              content: rawContent,
-              created_at: step.created_at ? new Date(step.created_at).getTime() : Date.now(),
-              status: 'done',
-            });
-          } else if (step.type === 'PLANNER_RESPONSE') {
-            if (!currentAssistantMsg) {
-              currentAssistantMsg = {
-                id: `assistant-${step.step_index ?? Date.now()}`,
-                role: 'assistant',
-                content: step.content || '',
-                thinking: step.thinking || '',
-                toolCalls: [],
-                created_at: step.created_at ? new Date(step.created_at).getTime() : Date.now(),
-                status: 'done',
-              };
-            } else {
-              if (step.content) {
-                currentAssistantMsg.content = mergeTranscriptText(currentAssistantMsg.content || '', step.content);
-              }
-              if (step.thinking) {
-                currentAssistantMsg.thinking = mergeTranscriptText(currentAssistantMsg.thinking || '', step.thinking);
-              }
-            }
-
-            if (step.created_at) {
-              currentAssistantMsg.completed_at = new Date(step.created_at).getTime();
-            }
-
-            if (step.tool_calls && Array.isArray(step.tool_calls)) {
-              for (const tc of step.tool_calls) {
-                let parsedArgs = tc.args;
-                if (typeof parsedArgs === 'string') {
-                  try {
-                    parsedArgs = JSON.parse(parsedArgs);
-                  } catch { }
-                }
-
-                let summary = parsedArgs?.toolSummary || tc.name || 'tool';
-                if (typeof summary === 'string') {
-                  summary = summary.replace(/^"|"$/g, '').trim();
-                }
-
-                currentAssistantMsg.toolCalls = currentAssistantMsg.toolCalls || [];
-                const stepIdx = step.step_index ?? Date.now();
-                const toolName = tc.name || 'tool';
-
-                const isDup = currentAssistantMsg.toolCalls.some(
-                  (t) => t.step_index === stepIdx && t.tool_name === toolName
-                );
-
-                if (!isDup) {
-                  currentAssistantMsg.toolCalls.push({
-                    step_index: stepIdx,
-                    tool_name: toolName,
-                    tool_summary: summary,
-                    tool_args: parsedArgs,
-                    state: 'DONE',
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        if (currentAssistantMsg) {
-          if (currentAssistantMsg.content) {
-            currentAssistantMsg.content = sanitizeMarkdownContent(
-              deduplicateConsecutiveParagraphs(currentAssistantMsg.content)
-            );
-          }
-          const dur = currentAssistantMsg.completed_at
-            ? Math.max(1, Math.round((currentAssistantMsg.completed_at - currentAssistantMsg.created_at) / 1000))
-            : undefined;
-          currentAssistantMsg.duration_seconds = dur;
-          loadedMessages.push(currentAssistantMsg);
-        }
-
+        const loadedMessages = parseTranscriptStepsToMessages(steps, isAct);
         setMessages(loadedMessages);
       } else {
         setMessages([]);
@@ -309,29 +337,43 @@ export function LeftSidebar() {
         const rawText = await invoke<string>('get_raw_transcript_text', {
           conversationId: s.id,
         });
-        setRawTranscriptText(rawText || '');
+        if (latestSelectedSessionRef.current === s.id) {
+          setRawTranscriptText(rawText || '');
+        }
       } catch {
-        setRawTranscriptText('');
+        if (latestSelectedSessionRef.current === s.id) {
+          setRawTranscriptText('');
+        }
       }
 
       // Load artifacts for this session
-      const artifacts = await invoke<ArtifactInfo[]>('get_brain_artifacts', {
-        conversationId: s.id,
-      });
-      setArtifacts(artifacts);
-      const plan = artifacts.find((a) => a.name === 'implementation_plan.md');
-      if (plan) {
-        setPlanArtifact(plan);
-      } else {
-        setPlanArtifact(null);
+      try {
+        const artifacts = await invoke<ArtifactInfo[]>('get_brain_artifacts', {
+          conversationId: s.id,
+        });
+        if (latestSelectedSessionRef.current === s.id) {
+          setArtifacts(artifacts);
+          const plan = artifacts.find((a) => a.name === 'implementation_plan.md');
+          if (plan) {
+            setPlanArtifact(plan);
+          } else {
+            setPlanArtifact(null);
+          }
+        }
+      } catch {
+        if (latestSelectedSessionRef.current === s.id) {
+          setArtifacts([]);
+          setPlanArtifact(null);
+        }
       }
     } catch (err) {
       console.error('Failed to load session transcript:', err);
+      setMessages([]);
     }
   };
 
   return (
-    <aside className="h-full flex flex-col justify-between bg-zinc-50/70 dark:bg-zinc-950/80 border-r border-zinc-200 dark:border-zinc-800/80 text-zinc-700 dark:text-zinc-300 transition-colors select-none">
+    <aside className="h-full flex flex-col justify-between bg-zinc-50/70 dark:bg-zinc-950/80 text-zinc-700 dark:text-zinc-300 transition-colors select-none">
       {/* Top Section: New Chat & Project Folders with Clean Sessions */}
       <div className="flex-1 overflow-y-auto px-2.5 py-2 space-y-2">
         {/* Top Actions: New Conversation, Conversation History, Scheduled Tasks */}
@@ -430,6 +472,8 @@ export function LeftSidebar() {
                   <div className="space-y-0.5 mt-0.5">
                     {visibleSessions.map((s) => {
                       const isActiveSession = conversationId === s.id;
+                      const isRunningNow = activeSessionIds.has(s.id) || (conversationId === s.id && isStreaming);
+                      const status = isRunningNow ? 'running' : s.status || 'completed';
                       const timeStr = formatTimeAgoShort(s.updated_at || s.created_at);
                       return (
                         <div
@@ -442,11 +486,32 @@ export function LeftSidebar() {
                             }`}
                         >
                           <span className="truncate flex-1 min-w-0">{s.title || t.sidebar.untitledSession}</span>
-                          {timeStr && (
-                            <span className="text-[12px] text-zinc-400 dark:text-zinc-500 font-normal shrink-0 ml-2">
-                              {timeStr}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            {status === 'running' ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-medium shrink-0">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                </span>
+                                <span>{t.sidebar.statusRunning}</span>
+                              </span>
+                            ) : status === 'plan_ready' ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-[10px] font-medium shrink-0">
+                                <span>{t.sidebar.statusPlanReady}</span>
+                              </span>
+                            ) : status === 'incomplete' ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-medium shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+                                <span>{t.sidebar.statusIncomplete}</span>
+                              </span>
+                            ) : (
+                              timeStr && (
+                                <span className="text-[12px] text-zinc-400 dark:text-zinc-500 font-normal">
+                                  {timeStr}
+                                </span>
+                              )
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -491,6 +556,8 @@ export function LeftSidebar() {
                 <div className="space-y-0.5 mt-0.5">
                   {visibleSessions.map((s) => {
                     const isActiveSession = conversationId === s.id;
+                    const isRunningNow = activeSessionIds.has(s.id) || (conversationId === s.id && isStreaming);
+                    const status = isRunningNow ? 'running' : s.status || 'completed';
                     const timeStr = formatTimeAgoShort(s.updated_at || s.created_at);
                     return (
                       <div
@@ -503,11 +570,32 @@ export function LeftSidebar() {
                           }`}
                       >
                         <span className="truncate flex-1 min-w-0">{s.title || t.sidebar.untitledSession}</span>
-                        {timeStr && (
-                          <span className="text-[12px] text-zinc-400 dark:text-zinc-500 font-normal shrink-0 ml-2">
-                            {timeStr}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          {status === 'running' ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-medium shrink-0">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                              </span>
+                              <span>{t.sidebar.statusRunning}</span>
+                            </span>
+                          ) : status === 'plan_ready' ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-[10px] font-medium shrink-0">
+                              <span>{t.sidebar.statusPlanReady}</span>
+                            </span>
+                          ) : status === 'incomplete' ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-medium shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+                              <span>{t.sidebar.statusIncomplete}</span>
+                            </span>
+                          ) : (
+                            timeStr && (
+                              <span className="text-[12px] text-zinc-400 dark:text-zinc-500 font-normal">
+                                {timeStr}
+                              </span>
+                            )
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -531,59 +619,16 @@ export function LeftSidebar() {
         </div>
       </div>
 
-      {/* Bottom Section: Permission Guard & Settings */}
-      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/80 dark:bg-zinc-950 space-y-2">
-        {/* Permission Mode Switcher */}
-        <div className="bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800/80 rounded-lg p-2.5 shadow-2xs">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[2.2]" />
-              {t.sidebar.permissions}
-            </span>
-            <span className="text-[10.5px] uppercase font-mono font-medium text-zinc-500">
-              {permissionMode}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-1 text-[11px]">
-            <button
-              onClick={() => setPermissionMode('auto-approve')}
-              className={`py-1 rounded-md font-medium transition cursor-pointer ${permissionMode === 'auto-approve'
-                ? 'bg-emerald-100 text-emerald-900 font-semibold border border-emerald-300 dark:bg-emerald-600/30 dark:text-emerald-300 dark:border-emerald-500/40'
-                : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-            >
-              {t.sidebar.permAuto}
-            </button>
-            <button
-              onClick={() => setPermissionMode('ask-first')}
-              className={`py-1 rounded-md font-medium transition cursor-pointer ${permissionMode === 'ask-first'
-                ? 'bg-amber-100 text-amber-900 font-semibold border border-amber-300 dark:bg-amber-600/30 dark:text-amber-300 dark:border-amber-500/40'
-                : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-            >
-              {t.sidebar.permConfirm}
-            </button>
-            <button
-              onClick={() => setPermissionMode('sandbox')}
-              className={`py-1 rounded-md font-medium transition cursor-pointer ${permissionMode === 'sandbox'
-                ? 'bg-blue-100 text-blue-900 font-semibold border border-blue-300 dark:bg-blue-600/30 dark:text-blue-300 dark:border-blue-500/40'
-                : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-            >
-              {t.sidebar.permSandbox}
-            </button>
-          </div>
-        </div>
-
-        {/* Settings button */}
-        <div
+      {/* Bottom Section: Settings */}
+      <div className="p-3 border-t border-zinc-200/70 dark:border-zinc-800/70">
+        <button
+          type="button"
           onClick={() => setIsSettingsModalOpen(true)}
-          className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] font-medium text-zinc-800 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800/60 cursor-pointer transition select-none"
+          className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[14px] font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800/60 cursor-pointer transition select-none"
         >
-          <Settings className="w-4 h-4 text-zinc-500 dark:text-zinc-400 stroke-[2]" />
-          <span>{language === 'zh' ? '客户端设置与环境' : 'Client Settings & Environment'}</span>
-        </div>
+          <Settings className="w-4 h-4 text-zinc-600 dark:text-zinc-400 stroke-[1.8]" />
+          <span>{t.sidebar.clientSettings}</span>
+        </button>
       </div>
 
       {/* Add Project Modal */}
@@ -648,87 +693,273 @@ export function LeftSidebar() {
         onClose={() => setIsSettingsModalOpen(false)}
         title={t.modals.settingsTitle}
         description={t.modals.settingsDesc}
+        className="max-w-2xl w-full"
       >
-        <div className="space-y-4 text-xs text-zinc-700 dark:text-zinc-300">
-          {/* Theme Selection */}
-          <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-zinc-900 dark:text-zinc-200 flex items-center gap-1.5">
-                  <Sun className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  {t.modals.themeSettingsLabel}
+        <div className="space-y-6 text-sm text-zinc-700 dark:text-zinc-300">
+          {/* Appearance & Language Group */}
+          <div className="space-y-2">
+            <h4 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-1">{t.common.general || 'General'}</h4>
+            <div className="bg-white dark:bg-zinc-950/50 border border-zinc-200/80 dark:border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
+              {/* Theme Row */}
+              <div className="flex items-center justify-between p-3.5 border-b border-zinc-200/80 dark:border-zinc-800/80">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-lg">
+                    <Sun className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-[13px] text-zinc-900 dark:text-zinc-100">{t.modals.themeSettingsLabel}</div>
+                    <div className="text-[11px] text-zinc-500 mt-0.5">{t.modals.themeSettingsDesc}</div>
+                  </div>
                 </div>
-                <div className="text-zinc-500 text-[11px] mt-0.5">
-                  {t.modals.themeSettingsDesc}
+                <div className="flex bg-zinc-100 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50">
+                  {([
+                    { id: 'light', label: t.common.themeLight, icon: Sun },
+                    { id: 'dark', label: t.common.themeDark, icon: Moon },
+                    { id: 'system', label: t.common.themeSystem, icon: Monitor },
+                  ] as const).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={(e) => setTheme(item.id, e)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
+                        theme === item.id
+                          ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs ring-1 ring-zinc-200/50 dark:ring-zinc-700/50'
+                          : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                      }`}
+                    >
+                      <item.icon className="w-3.5 h-3.5" />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                {([
-                  { id: 'light', label: t.common.themeLight, icon: Sun },
-                  { id: 'dark', label: t.common.themeDark, icon: Moon },
-                  { id: 'system', label: t.common.themeSystem, icon: Monitor },
-                ] as const).map((item) => (
+
+              {/* Language Row */}
+              <div className="flex items-center justify-between p-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg">
+                    <Languages className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-[13px] text-zinc-900 dark:text-zinc-100">{t.modals.languageSettingsLabel}</div>
+                    <div className="text-[11px] text-zinc-500 mt-0.5">{t.modals.languageSettingsDesc}</div>
+                  </div>
+                </div>
+                <div className="flex bg-zinc-100 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50">
+                  {(['zh', 'en'] as const).map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => setLanguage(lang)}
+                      className={`px-4 py-1.5 text-xs rounded-md font-medium transition-all ${
+                        language === lang
+                          ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs ring-1 ring-zinc-200/50 dark:ring-zinc-700/50'
+                          : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                      }`}
+                    >
+                      {lang === 'zh' ? '简体中文' : 'English'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Permission Policy Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">{t.sidebar.permissions || 'Permissions'}</h4>
+              <span className="text-[10px] uppercase font-mono font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                {permissionMode}
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                {
+                  id: 'auto-approve' as const,
+                  title: t.modals.permAutoTitle,
+                  desc: t.modals.permAutoDesc,
+                  icon: ShieldAlert,
+                  activeClass: 'border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-500/10 text-emerald-950 dark:text-emerald-200 ring-1 ring-emerald-500/20',
+                  iconColor: 'text-emerald-600 dark:text-emerald-400',
+                },
+                {
+                  id: 'ask-first' as const,
+                  title: t.modals.permConfirmTitle,
+                  desc: t.modals.permConfirmDesc,
+                  icon: Hand,
+                  activeClass: 'border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 text-amber-950 dark:text-amber-200 ring-1 ring-amber-500/20',
+                  iconColor: 'text-amber-600 dark:text-amber-400',
+                },
+                {
+                  id: 'sandbox' as const,
+                  title: t.modals.permSandboxTitle,
+                  desc: t.modals.permSandboxDesc,
+                  icon: ShieldCheck,
+                  activeClass: 'border-blue-500/50 bg-blue-50/50 dark:bg-blue-500/10 text-blue-950 dark:text-blue-200 ring-1 ring-blue-500/20',
+                  iconColor: 'text-blue-600 dark:text-blue-400',
+                },
+              ].map((item) => {
+                const isSelected = permissionMode === item.id;
+                const IconComponent = item.icon;
+                return (
                   <button
                     key={item.id}
-                    onClick={(e) => setTheme(item.id, e)}
-                    className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-md font-medium transition cursor-pointer ${theme === item.id
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
-                      }`}
+                    type="button"
+                    onClick={() => setPermissionMode(item.id)}
+                    className={`flex flex-col items-start p-3.5 rounded-xl border text-left transition-all duration-200 ${
+                      isSelected
+                        ? item.activeClass
+                        : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950/50 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 shadow-sm'
+                    }`}
                   >
-                    <item.icon className="w-3 h-3" />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-2 font-medium text-[13px] mb-1.5">
+                      <IconComponent className={`w-4 h-4 shrink-0 ${isSelected ? item.iconColor : 'text-zinc-400 dark:text-zinc-500'}`} />
+                      <span className={isSelected ? 'font-semibold' : 'font-medium'}>{item.title}</span>
+                    </div>
+                    <span className={`text-[11px] leading-relaxed ${isSelected ? '' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                      {item.desc}
+                    </span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Language Selection */}
-          <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-zinc-900 dark:text-zinc-200 flex items-center gap-1.5">
-                  <Languages className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  {t.modals.languageSettingsLabel}
+          {/* Network Proxy Routing Section */}
+          <div className="space-y-2">
+            <h4 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-1">{t.common.network || 'Network'}</h4>
+            <div className="bg-white dark:bg-zinc-950/50 border border-zinc-200/80 dark:border-zinc-800/80 rounded-xl overflow-hidden shadow-sm transition-all">
+              <div className="flex items-center justify-between p-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-[13px] text-zinc-900 dark:text-zinc-100">{t.modals.proxySettingsTitle}</div>
+                    <div className="text-[11px] text-zinc-500 mt-0.5">{t.modals.proxySettingsDesc}</div>
+                  </div>
                 </div>
-                <div className="text-zinc-500 text-[11px] mt-0.5">
-                  {t.modals.languageSettingsDesc}
+                <button
+                  type="button"
+                  onClick={() => void handleToggleProxy()}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    proxyEnabled ? 'bg-purple-600' : 'bg-zinc-300 dark:bg-zinc-700'
+                  }`}
+                  role="switch"
+                  aria-checked={proxyEnabled}
+                  title={t.modals.proxyEnableLabel}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                      proxyEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {proxyEnabled && (
+                <div className="p-4 bg-zinc-50/50 dark:bg-zinc-900/20 border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
+                        {t.modals.proxyHostLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={inputHost}
+                        onChange={(e) => setInputHost(e.target.value)}
+                        placeholder="127.0.0.1"
+                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-mono text-zinc-900 dark:text-zinc-100 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition-all shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
+                        {t.modals.proxyPortLabel}
+                      </label>
+                      <input
+                        type="number"
+                        value={inputPort}
+                        onChange={(e) => setInputPort(e.target.value)}
+                        placeholder="7890"
+                        className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-mono text-zinc-900 dark:text-zinc-100 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition-all shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    {/* Reachability Status Indicator */}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          proxyIsReachable === true
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                            : proxyIsReachable === false
+                            ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                            : 'bg-zinc-300 dark:bg-zinc-600'
+                        }`}
+                      />
+                      <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                        {proxyIsReachable === true
+                          ? t.modals.proxyReachable(inputHost || '127.0.0.1', parseInt(inputPort, 10) || 7890)
+                          : proxyIsReachable === false
+                          ? t.modals.proxyUnreachable(inputHost || '127.0.0.1', parseInt(inputPort, 10) || 7890)
+                          : (language === 'zh' ? '尚未测试连通性' : 'Not verified yet')}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleTestProxy()}
+                        disabled={proxyIsTesting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition disabled:opacity-50 shadow-sm"
+                      >
+                        <RotateCw className={`w-3 h-3 ${proxyIsTesting ? 'animate-spin' : ''}`} />
+                        <span>{proxyIsTesting ? t.modals.proxyTesting : t.modals.proxyTestBtn}</span>
+                      </button>
+
+                      <Button
+                        type="button"
+                        variant="purple"
+                        size="sm"
+                        onClick={() => void handleSaveProxy()}
+                        className="h-[26px] text-[11px] px-3 rounded-lg"
+                      >
+                        {proxySavedMessage ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 mr-1" />
+                            {t.common.saved || '已保存'}
+                          </>
+                        ) : (
+                          t.common.save
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <p className="text-[10.5px] text-zinc-400 dark:text-zinc-500 leading-relaxed pt-1">
+                    {t.modals.proxyHelpNote}
+                  </p>
                 </div>
-              </div>
-              <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                {(['zh', 'en'] as const).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => setLanguage(lang)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition ${language === lang
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
-                      }`}
-                  >
-                    {lang === 'zh' ? '简体中文' : 'English'}
-                  </button>
-                ))}
-              </div>
+              )}
             </div>
           </div>
 
-          {/* CLI Backend Section */}
-          <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-2">
-            <div className="font-medium text-zinc-900 dark:text-zinc-200">{t.modals.cliBackendTitle}</div>
-            <div className="text-zinc-600 dark:text-zinc-400 text-[11px]">
-              {t.modals.cliEngineLabel}: <span className="font-mono text-purple-600 dark:text-purple-400">agy stream-json (Local Subprocess)</span>
+          {/* CLI Backend & Footer */}
+          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-col gap-1.5 text-[10.5px] text-zinc-500">
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium text-zinc-600 dark:text-zinc-400">{t.modals.cliBackendTitle}:</span>
+                <span className="font-mono text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 px-1.5 py-0.5 rounded">agy stream-json</span>
+                <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">Hybrid Core</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium text-zinc-600 dark:text-zinc-400">{t.modals.nativeStorageLabel}:</span>
+                <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">~/.gemini/antigravity</span>
+              </div>
             </div>
-            <div className="text-zinc-600 dark:text-zinc-400 text-[11px]">
-              {t.modals.platformLabel}: <span className="font-mono text-zinc-800 dark:text-zinc-200">macOS / Windows Hybrid Core</span>
-            </div>
-            <div className="text-zinc-600 dark:text-zinc-400 text-[11px]">
-              {t.modals.nativeStorageLabel}: <span className="font-mono text-zinc-800 dark:text-zinc-200">~/.gemini/antigravity</span>
-            </div>
-          </div>
 
-          <div className="flex justify-end pt-2">
-            <Button variant="default" size="sm" onClick={() => setIsSettingsModalOpen(false)}>
+            <Button variant="default" size="sm" className="rounded-lg px-5 h-8 shrink-0" onClick={() => setIsSettingsModalOpen(false)}>
               {t.common.done}
             </Button>
           </div>

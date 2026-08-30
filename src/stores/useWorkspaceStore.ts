@@ -5,6 +5,7 @@ interface WorkspaceState {
   projects: Project[];
   activeProject: Project | null;
   isInspectorOpen: boolean;
+  isInspectorFullscreen: boolean;
   inspectorTab: InspectorTab;
   modifiedFiles: ModifiedFile[];
   activeDiffFile: ModifiedFile | null;
@@ -17,9 +18,16 @@ interface WorkspaceState {
   setActiveProject: (project: Project | null) => void;
   setIsAddProjectModalOpen: (open: boolean) => void;
   toggleInspector: (open?: boolean) => void;
+  toggleInspectorFullscreen: (fullscreen?: boolean) => void;
   setInspectorTab: (tab: InspectorTab) => void;
   setModifiedFiles: (files: ModifiedFile[]) => void;
-  addModifiedFile: (path: string, original?: string, modified?: string) => void;
+  addModifiedFile: (
+    path: string,
+    original?: string,
+    modified?: string,
+    originalExists?: boolean,
+    canRevert?: boolean
+  ) => void;
   setActiveDiffFile: (file: ModifiedFile | null) => void;
   setPlanArtifact: (plan: ArtifactInfo | null) => void;
   setArtifacts: (artifacts: ArtifactInfo[]) => void;
@@ -30,6 +38,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   projects: [],
   activeProject: null,
   isInspectorOpen: false,
+  isInspectorFullscreen: false,
   isAddProjectModalOpen: false,
   inspectorTab: 'plan',
   modifiedFiles: [],
@@ -42,28 +51,63 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setActiveProject: (activeProject) => set({ activeProject }),
   setIsAddProjectModalOpen: (isAddProjectModalOpen) => set({ isAddProjectModalOpen }),
   toggleInspector: (open) =>
-    set((state) => ({
-      isInspectorOpen: open !== undefined ? open : !state.isInspectorOpen,
-    })),
+    set((state) => {
+      const willOpen = open !== undefined ? open : !state.isInspectorOpen;
+      return {
+        isInspectorOpen: willOpen,
+        // Reset fullscreen if closing
+        isInspectorFullscreen: willOpen ? state.isInspectorFullscreen : false,
+      };
+    }),
+  toggleInspectorFullscreen: (fullscreen) =>
+    set((state) => {
+      const willFullscreen = fullscreen !== undefined ? fullscreen : !state.isInspectorFullscreen;
+      return {
+        isInspectorFullscreen: willFullscreen,
+        // If turning fullscreen on, also ensure inspector is open
+        isInspectorOpen:
+          willFullscreen === false ? state.isInspectorOpen : true,
+      };
+    }),
   setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   setModifiedFiles: (modifiedFiles) => set({ modifiedFiles }),
-  addModifiedFile: (path, original = '', modified = '') =>
+  addModifiedFile: (path, original, modified, originalExists, canRevert) =>
     set((state) => {
       const existing = state.modifiedFiles.find((f) => f.path === path);
       if (existing) {
+        const updated = {
+          ...existing,
+          ...(original !== undefined ? { original_content: original } : {}),
+          ...(modified !== undefined ? { modified_content: modified } : {}),
+          ...(originalExists !== undefined
+            ? {
+                original_exists: originalExists,
+                status: originalExists === false
+                  ? ('created' as const)
+                  : ('modified' as const),
+              }
+            : {}),
+          ...(canRevert !== undefined ? { can_revert: canRevert } : {}),
+        };
+        const newFiles = state.modifiedFiles.map((f) =>
+          f.path === path ? updated : f
+        );
         return {
-          modifiedFiles: state.modifiedFiles.map((f) =>
-            f.path === path
-              ? { ...f, original_content: original || f.original_content, modified_content: modified || f.modified_content }
-              : f
-          ),
+          modifiedFiles: newFiles,
+          // Keep activeDiffFile in sync if it points to the same file
+          activeDiffFile:
+            state.activeDiffFile?.path === path
+              ? updated
+              : state.activeDiffFile,
         };
       }
       const newFile: ModifiedFile = {
         path,
-        original_content: original,
-        modified_content: modified,
-        status: 'modified',
+        original_content: original ?? '',
+        modified_content: modified ?? '',
+        status: originalExists === false ? 'created' : 'modified',
+        original_exists: originalExists,
+        can_revert: canRevert ?? false,
       };
       return {
         modifiedFiles: [...state.modifiedFiles, newFile],

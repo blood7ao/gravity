@@ -33,15 +33,21 @@ export function ThinkingBlock({
       return;
     }
 
+    // Anchor the live timer to the thinking block's creation time so that a
+    // remount mid-stream (refresh, view switch, parent unmount/remount) keeps
+    // counting from the block's actual creation instead of restarting at 1s.
     const start = createdAt || Date.now();
     const interval = setInterval(() => {
       setLiveElapsed(Math.max(1, Math.round((Date.now() - start) / 1000)));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isStreaming, createdAt, durationSeconds]);
+  }, [isStreaming, durationSeconds, createdAt]);
 
   const hasThinking = Boolean(thinking && thinking.trim().length > 0);
+
+  // When streaming is over and no backend duration was reported, fall back
+  // to the last measured elapsed value instead of the generic title.
   const finalDuration = durationSeconds || liveElapsed;
 
   // Format label

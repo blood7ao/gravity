@@ -10,6 +10,7 @@ export const en: TranslationSchema = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     save: 'Save',
+    saved: 'Saved',
     delete: 'Delete',
     close: 'Close',
     browse: 'Browse',
@@ -24,6 +25,8 @@ export const en: TranslationSchema = {
     themeDark: 'Dark Theme',
     themeLight: 'Light Theme',
     themeSystem: 'System Theme',
+    general: 'General',
+    network: 'Network',
   },
   header: {
     noProject: 'No Project Selected',
@@ -53,11 +56,14 @@ export const en: TranslationSchema = {
     untitledSession: 'Untitled Session',
     noSessions: 'No previous sessions in workspace',
     effortLabel: (effort: string) => `${effort} effort`,
+    statusRunning: 'Running',
+    statusPlanReady: 'Plan Ready',
+    statusIncomplete: 'Incomplete',
     permissions: 'Permissions',
     permAuto: 'Auto',
     permConfirm: 'Confirm',
     permSandbox: 'Sandbox',
-    clientSettings: 'Client Settings & Environment',
+    clientSettings: 'Settings',
   },
   modals: {
     addProjectTitle: 'Open Workspace Project',
@@ -78,7 +84,27 @@ export const en: TranslationSchema = {
     languageSettingsDesc: 'Choose your preferred display language for the application.',
     themeSettingsLabel: 'Theme Appearance',
     themeSettingsDesc: 'Select light white theme, dark theme, or sync with operating system.',
+    permissionSettingsTitle: 'Permission Policy',
+    permissionSettingsDesc: 'Configure how Antigravity handles tool executions and file operations. You can also quickly toggle this in the prompt input bar.',
+    permAutoTitle: 'Auto-Approve',
+    permAutoDesc: 'Automatically approve all tool executions and file operations (Full Access)',
+    permConfirmTitle: 'Ask First',
+    permConfirmDesc: 'Always ask for approval before running commands or editing files (Safest)',
+    permSandboxTitle: 'Smart Sandbox',
+    permSandboxDesc: 'Only ask for approval when risky or sensitive operations are detected',
+    proxySettingsTitle: 'Proxy Routing',
+    proxySettingsDesc: 'Inspired by AIProxyLauncher, injects proxy routes for agy sessions, Google OAuth, and official app launch while keeping localhost direct.',
+    proxyEnableLabel: 'Enable Proxy Routing',
+    proxyHostLabel: 'Proxy Host',
+    proxyPortLabel: 'Proxy Port',
+    proxyTestBtn: 'Test Connection',
+    proxyTesting: 'Checking...',
+    proxyReachable: (host: string, port: number) => `Proxy ${host}:${port} is Ready`,
+    proxyUnreachable: (host: string, port: number) => `Cannot connect to proxy ${host}:${port}`,
+    proxySaveSuccess: 'Proxy settings saved and applied',
+    proxyHelpNote: 'No HTTPS decryption; injects HTTP/HTTPS/SOCKS environment variables and preserves localhost direct connections via NO_PROXY.',
   },
+
   prompt: {
     inputPlaceholder: (projectName?: string) =>
       projectName
@@ -143,17 +169,19 @@ export const en: TranslationSchema = {
     thinkingHide: 'Hide',
     thinkingShow: 'Show',
     thinkingElapsed: (seconds: number) => {
-      if (seconds < 60) return `Thought for ${Math.max(1, Math.round(seconds))}s`;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
+      const totalSecs = Math.round(seconds);
+      if (totalSecs < 60) return `Thought for ${Math.max(1, totalSecs)}s`;
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
       return secs === 0 ? `Thought for ${mins}m` : `Thought for ${mins}m ${secs}s`;
     },
     thinkingActive: (seconds?: number) =>
       seconds && seconds > 0 ? `Thinking (${Math.round(seconds)}s)…` : 'Thinking…',
     turnElapsed: (seconds: number) => {
-      if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
+      const totalSecs = Math.round(seconds);
+      if (totalSecs < 60) return `${Math.max(1, totalSecs)}s`;
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
       return secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
     },
     editedFiles: (count: number) => `Edited ${count} ${count === 1 ? 'file' : 'files'}`,
@@ -163,6 +191,9 @@ export const en: TranslationSchema = {
     retry: 'Retry',
     like: 'Helpful',
     dislike: 'Unhelpful',
+    turnInterrupted: 'Task interrupted (timeout or process exited)',
+    continueTask: 'Continue Task',
+    continueTaskPrompt: 'Please continue and complete the previous task.',
     exploredFiles: (count: number) =>
       `Explored ${count} ${count === 1 ? 'file / search' : 'files / searches'}`,
     details: 'Details',
@@ -210,6 +241,8 @@ export const en: TranslationSchema = {
     viewRawOutput: 'View Raw CLI Output',
     rawLogsTitle: 'Raw CLI Output & Stream Logs',
     closeInspector: 'Close Inspector',
+    maximizeInspector: 'Maximize / Fullscreen Panel',
+    restoreInspector: 'Restore Panel Size',
     artifactsTitle: 'Brain Artifacts & Reports',
     noArtifacts: 'No artifacts generated yet for this session.',
     noPlan: 'No Active Implementation Plan',

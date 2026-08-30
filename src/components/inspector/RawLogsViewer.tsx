@@ -157,10 +157,10 @@ export function RawLogsViewer() {
         {/* Row 1: View mode tabs + Copy & Actions */}
         <div className="flex items-center justify-between gap-2">
           {/* Mode Switcher */}
-          <div className="flex items-center gap-1 bg-zinc-200/70 dark:bg-zinc-800 p-0.5 rounded-lg text-xs">
+          <div className="flex items-center gap-1 bg-zinc-200/70 dark:bg-zinc-800 p-0.5 rounded-lg text-xs shrink-0">
             <button
               onClick={() => setViewMode('parsed')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer whitespace-nowrap ${
                 viewMode === 'parsed'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -175,7 +175,7 @@ export function RawLogsViewer() {
 
             <button
               onClick={() => setViewMode('raw')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer whitespace-nowrap ${
                 viewMode === 'raw'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -187,7 +187,7 @@ export function RawLogsViewer() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {viewMode === 'raw' && (
               <button
                 onClick={() => setWrapText(!wrapText)}
@@ -218,7 +218,7 @@ export function RawLogsViewer() {
               variant="outline"
               size="sm"
               onClick={handleCopyAll}
-              className="h-7 text-xs flex items-center gap-1 font-medium"
+              className="h-7 text-xs flex items-center gap-1 font-medium whitespace-nowrap shrink-0"
             >
               {copied ? (
                 <>
@@ -238,7 +238,7 @@ export function RawLogsViewer() {
         {/* Row 2: Search + Filter Pills */}
         <div className="flex items-center gap-2">
           {/* Search box */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -251,7 +251,7 @@ export function RawLogsViewer() {
 
           {/* Filter Pills (Parsed mode) */}
           {viewMode === 'parsed' && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={() => setFilterType('all')}
                 className={`px-2 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${

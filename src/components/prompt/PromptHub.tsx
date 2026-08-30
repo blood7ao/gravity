@@ -524,11 +524,11 @@ export function PromptHub() {
         )}
 
         {/* Bottom Action Controls Bar */}
-        <div className="flex items-center justify-between pt-2.5 px-1 border-t border-zinc-100 dark:border-zinc-800 mt-1 select-none">
+        <div className="flex items-center justify-between gap-2 pt-2.5 px-1 border-t border-zinc-100 dark:border-zinc-800 mt-1 select-none">
           {/* Left Controls */}
-          <div className="flex items-center gap-2 relative">
+          <div className="flex items-center gap-1.5 sm:gap-2 relative shrink-0 min-w-0">
             {/* Plus Menu Button */}
-            <div className="relative" ref={plusMenuRef}>
+            <div className="relative shrink-0" ref={plusMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
@@ -683,21 +683,21 @@ export function PromptHub() {
             </div>
 
             {/* Permission Mode Popover Trigger & Card */}
-            <div className="relative" ref={permissionMenuRef}>
+            <div className="relative shrink-0" ref={permissionMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsPermissionMenuOpen(!isPermissionMenuOpen)}
-                className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition font-medium ${
+                className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition font-medium whitespace-nowrap shrink-0 ${
                   permissionMode === 'auto-approve'
                     ? 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
                     : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                 }`}
                 title="点击选择权限模式"
               >
-                {permissionMode === 'auto-approve' && <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />}
-                {permissionMode === 'ask-first' && <Hand className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300" />}
-                {permissionMode === 'sandbox' && <ShieldCheck className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300" />}
-                <span className="font-semibold text-xs">
+                {permissionMode === 'auto-approve' && <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 shrink-0" />}
+                {permissionMode === 'ask-first' && <Hand className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300 shrink-0" />}
+                {permissionMode === 'sandbox' && <ShieldCheck className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300 shrink-0" />}
+                <span className="font-semibold text-xs whitespace-nowrap">
                   {permissionMode === 'auto-approve'
                     ? (language === 'zh' ? '完全访问' : 'Full access')
                     : permissionMode === 'ask-first'
@@ -706,7 +706,7 @@ export function PromptHub() {
                 </span>
               </button>
 
-                      {/* Permission popover */}
+              {/* Permission popover */}
               {isPermissionMenuOpen && (
                 <div className="absolute bottom-9 left-0 w-[350px] md:w-[380px] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#18181b] shadow-2xl p-4 z-40 space-y-2 font-sans select-none animate-in fade-in zoom-in-95 duration-100">
                   {/* Top Header */}
@@ -818,12 +818,12 @@ export function PromptHub() {
 
             {/* Mode Selection Pill (e.g. 💡 计划 / 🎯 目标) */}
             {currentMode === 'plan' && (
-              <div className="relative group/modepill flex items-center">
+              <div className="relative group/modepill flex items-center shrink-0">
                 {/* Tooltip on hover */}
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-lg opacity-0 group-hover/modepill:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30">
                   {t.prompt.createPlanTooltip}
                 </div>
-                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs px-2 py-0.5 rounded-full font-medium shadow-2xs">
+                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs px-2 py-0.5 rounded-full font-medium shadow-2xs whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() => setMode('accept-edits')}
@@ -838,12 +838,12 @@ export function PromptHub() {
             )}
 
             {currentMode === 'goal' && (
-              <div className="relative group/modepill flex items-center">
+              <div className="relative group/modepill flex items-center shrink-0">
                 {/* Tooltip on hover */}
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-lg opacity-0 group-hover/modepill:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30">
                   {t.prompt.goalTooltip}
                 </div>
-                <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-800 dark:text-purple-300 text-xs px-2 py-0.5 rounded-full font-medium shadow-2xs">
+                <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-800 dark:text-purple-300 text-xs px-2 py-0.5 rounded-full font-medium shadow-2xs whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() => setMode('accept-edits')}
@@ -859,18 +859,18 @@ export function PromptHub() {
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Agent Selector Dropdown */}
-            <div className="relative" ref={agentMenuRef}>
+            <div className="relative shrink-0" ref={agentMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsAgentMenuOpen(!isAgentMenuOpen)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition whitespace-nowrap"
                 title="切换 Agent"
               >
-                <Bot className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <Bot className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
                 <span className="max-w-24 truncate">{selectedAgent || '默认 Agent'}</span>
-                <ChevronDown className="w-3 h-3 text-zinc-500" />
+                <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
               </button>
 
               {isAgentMenuOpen && (
@@ -904,7 +904,7 @@ export function PromptHub() {
                       className={`w-full text-left px-2 py-1.5 rounded-md text-xs transition flex items-center justify-between ${
                         selectedAgent === agent
                           ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-950 dark:text-white font-medium'
-                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                        : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                       }`}
                     >
                       <span className="truncate">{agent}</span>
@@ -926,7 +926,7 @@ export function PromptHub() {
             {/* Mic / Voice Button */}
             <button
               type="button"
-              className="w-6 h-6 rounded-full flex items-center justify-center text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+              className="w-6 h-6 rounded-full flex items-center justify-center text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition shrink-0"
               title="语音输入"
             >
               <Mic className="w-4 h-4" />
@@ -937,7 +937,7 @@ export function PromptHub() {
               <button
                 type="button"
                 onClick={handleStop}
-                className="w-7 h-7 rounded-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:opacity-85 transition shadow-2xs"
+                className="w-7 h-7 rounded-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:opacity-85 transition shadow-2xs shrink-0"
                 title={t.prompt.stop}
               >
                 <Square className="w-3 h-3 fill-current" />
@@ -947,7 +947,7 @@ export function PromptHub() {
                 type="button"
                 onClick={handleSend}
                 disabled={(!input.trim() && pastedImages.length === 0) || isSending}
-                className="w-7 h-7 rounded-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs"
+                className="w-7 h-7 rounded-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs shrink-0"
                 title={t.prompt.send}
               >
                 <ArrowUp className="w-4 h-4" />

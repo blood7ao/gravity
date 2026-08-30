@@ -80,6 +80,12 @@ impl OAuthFlowState {
     }
 }
 
+async fn clear_flow_state(flow_state: &OAuthFlowState) {
+    *flow_state.active_verifier.lock().await = None;
+    *flow_state.active_state.lock().await = None;
+    *flow_state.cancel_tx.lock().await = None;
+}
+
 pub fn generate_pkce() -> PkcePair {
     let mut random_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random_bytes);
@@ -233,14 +239,20 @@ const SUCCESS_HTML: &str = r#"<!DOCTYPE html>
 </body>
 </html>"#;
 
+use crate::process::proxy::ProxyConfig;
+
 pub async fn exchange_code_for_tokens(
     code: &str,
     verifier: &str,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<OAuthExchangeResult, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let client = match proxy {
+        Some(p) => p.build_http_client(Duration::from_secs(20))?,
+        None => reqwest::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {e}"))?,
+    };
 
     let mut params = HashMap::new();
     params.insert("client_id", GOOGLE_CLIENT_ID);
@@ -306,11 +318,17 @@ pub async fn exchange_code_for_tokens(
     })
 }
 
-pub async fn refresh_google_token(refresh_token: &str) -> Result<RefreshedToken, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+pub async fn refresh_google_token(
+    refresh_token: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<RefreshedToken, String> {
+    let client = match proxy {
+        Some(p) => p.build_http_client(Duration::from_secs(15))?,
+        None => reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {e}"))?,
+    };
 
     let mut params = HashMap::new();
     params.insert("client_id", GOOGLE_CLIENT_ID);
@@ -347,7 +365,9 @@ pub async fn refresh_google_token(refresh_token: &str) -> Result<RefreshedToken,
 
 pub async fn run_oauth_flow(
     flow_state: Arc<OAuthFlowState>,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<OAuthExchangeResult, String> {
+
     let pkce = generate_pkce();
     *flow_state.active_verifier.lock().await = Some(pkce.verifier.clone());
     *flow_state.active_state.lock().await = Some(pkce.state.clone());
@@ -358,6 +378,7 @@ pub async fn run_oauth_flow(
     let listener = match TcpListener::bind(("127.0.0.1", OAUTH_REDIRECT_PORT)).await {
         Ok(l) => l,
         Err(e) => {
+            clear_flow_state(&flow_state).await;
             return Err(format!(
                 "Cannot bind local port {} for OAuth redirect: {}. Check if another process is using it, or use manual code entry.",
                 OAUTH_REDIRECT_PORT, e
@@ -444,10 +465,12 @@ pub async fn run_oauth_flow(
         }
     };
 
-    *flow_state.cancel_tx.lock().await = None;
-
-    let code = code_result?;
-    exchange_code_for_tokens(&code, &pkce.verifier).await
+    let result = match code_result {
+        Ok(code) => exchange_code_for_tokens(&code, &pkce.verifier, proxy).await,
+        Err(error) => Err(error),
+    };
+    clear_flow_state(&flow_state).await;
+    result
 }
 
 pub fn extract_code_from_manual_input(input: &str) -> String {
@@ -467,16 +490,19 @@ pub fn extract_code_from_manual_input(input: &str) -> String {
 pub async fn exchange_manual_code(
     code_or_url: &str,
     verifier: Option<&str>,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<OAuthExchangeResult, String> {
     let code = extract_code_from_manual_input(code_or_url);
     if code.is_empty() {
         return Err("Authorization code is empty".to_string());
     }
 
-    let default_verifier = "";
-    let verifier_to_use = verifier.unwrap_or(default_verifier);
-    exchange_code_for_tokens(&code, verifier_to_use).await
+    let verifier = verifier
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "请先点击 Google 登录并等待授权页面打开，再提交授权码".to_string())?;
+    exchange_code_for_tokens(&code, verifier, proxy).await
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -525,5 +551,13 @@ mod tests {
             extract_code_from_manual_input("https://localhost:51121/oauth-callback?state=xyz&code=abc123def"),
             "abc123def"
         );
+    }
+
+    #[tokio::test]
+    async fn manual_exchange_requires_the_active_pkce_verifier() {
+        let result = exchange_manual_code("authorization-code", None, None).await;
+        assert!(result
+            .expect_err("manual exchange without a flow must fail")
+            .contains("Google 登录"));
     }
 }

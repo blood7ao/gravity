@@ -119,50 +119,12 @@ function animateThemeChange(
   stateUpdater: () => void,
   event?: ThemeTransitionEvent
 ) {
-  // Check if View Transition API is supported and user hasn't requested reduced motion
-  const supportsViewTransition =
-    typeof document !== 'undefined' &&
-    'startViewTransition' in document &&
-    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  if (!supportsViewTransition) {
+  // View Transition API for circular ripple can cause severe frame rate drops 
+  // on complex DOMs (like when Monaco editor is rendered).
+  // Falling back to instant theme switch to ensure snappy performance.
+  flushSync(() => {
     stateUpdater();
-    return;
-  }
-
-  // Coordinates for circular ripple expansion
-  const { x, y } = getEventCoordinates(event);
-  const endRadius = Math.hypot(
-    Math.max(x, window.innerWidth - x),
-    Math.max(y, window.innerHeight - y)
-  );
-
-  const transition = (document as any).startViewTransition(() => {
-    flushSync(() => {
-      stateUpdater();
-    });
   });
-
-  transition.ready
-    .then(() => {
-      const clipPath = [
-        `circle(0px at ${x}px ${y}px)`,
-        `circle(${endRadius}px at ${x}px ${y}px)`,
-      ];
-      document.documentElement.animate(
-        {
-          clipPath: clipPath,
-        },
-        {
-          duration: 350,
-          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-          pseudoElement: '::view-transition-new(root)',
-        }
-      );
-    })
-    .catch((e: any) => {
-      console.debug('Theme view transition interrupted:', e);
-    });
 }
 
 const initialTheme = getInitialTheme();
