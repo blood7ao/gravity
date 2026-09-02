@@ -8,6 +8,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
+  RotateCw,
   Bug,
   Terminal,
 } from 'lucide-react';
@@ -268,6 +269,45 @@ export function ChatCanvas() {
     }
   };
 
+  const handleContinueTask = async () => {
+    if (!activeProject?.path || isStreaming) return;
+    const continuePrompt = t.canvas.continueTaskPrompt || (language === 'zh' ? '请继续完成刚才未完成的任务。' : 'Please continue and complete the previous task.');
+    addUserMessage(continuePrompt);
+    startAssistantTurn();
+
+    try {
+      const sessionInfo = await invoke<any>('get_current_session_info');
+      const needsRestart =
+        !sessionInfo?.is_running ||
+        sessionInfo?.conversation_id !== (conversationId || null) ||
+        sessionInfo?.project_dir !== activeProject.path ||
+        sessionInfo?.mode !== currentMode ||
+        (sessionInfo?.model || null) !== (selectedModel || null) ||
+        (sessionInfo?.agent || null) !== selectedAgent;
+
+      if (needsRestart) {
+        await invoke('start_session', {
+          projectDir: activeProject.path,
+          mode: currentMode,
+          effort: currentEffort,
+          conversationId: conversationId || null,
+          model: selectedModel || null,
+          agent: selectedAgent,
+          skipPermissions: permissionMode === 'auto-approve',
+        });
+      }
+
+      await invoke('send_prompt', { content: continuePrompt });
+    } catch (err: any) {
+      console.error('Failed to continue task:', err);
+      const errMsg = typeof err === 'string' ? err : err?.message || JSON.stringify(err);
+      finishTurn({
+        status: 'ERROR',
+        response: `继续任务失败: ${errMsg}`,
+      });
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-white dark:bg-[#121215] transition-colors">
       {/* Messages Scroll Area */}
@@ -360,38 +400,106 @@ export function ChatCanvas() {
                 ) : (
                   /* Clean Direct Assistant Turn Container */
                   <div className="w-full space-y-2">
-                    {/* Turn Duration & Collapsible Thinking Indicator */}
-                    {(msg.thinking || msg.status === 'streaming' || (msg.duration_seconds && msg.duration_seconds > 0)) && (
-                      <ThinkingBlock
-                        thinking={msg.thinking}
-                        isStreaming={msg.status === 'streaming'}
-                        durationSeconds={msg.duration_seconds || totalDuration}
-                        createdAt={msg.created_at}
-                      />
-                    )}
-
-                    {/* Aggregated Read/Command Tools */}
-                    {msg.toolCalls && msg.toolCalls.length > 0 && (
-                      <ActionPillGroup toolCalls={msg.toolCalls} />
-                    )}
-
-                    {/* Error Box */}
-                    {msg.status === 'error' && (
-                      <div className="p-3 bg-red-50/80 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-800/60 text-red-800 dark:text-red-200 text-xs flex items-start gap-2.5">
-                        <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-                        <div className="font-mono whitespace-pre-wrap break-all leading-relaxed">
-                          {msg.content || t.common.failed}
-                        </div>
+                    {/* Chronological Step Stream (Thinking, Tools, Interim Messages, Responses) */}
+                    {msg.parts && msg.parts.length > 0 ? (
+                      <div className="space-y-2">
+                        {msg.parts.map((part, pIdx) => {
+                          if (part.type === 'thinking') {
+                            const isLastPart = pIdx === msg.parts!.length - 1;
+                            const isThinkingActive = msg.status === 'streaming' && isLastPart;
+                            return (
+                              <ThinkingBlock
+                                key={pIdx}
+                                thinking={part.thinking}
+                                isStreaming={isThinkingActive}
+                                durationSeconds={part.durationSeconds}
+                                createdAt={msg.created_at}
+                              />
+                            );
+                          }
+                          if (part.type === 'tools') {
+                            return <ActionPillGroup key={pIdx} toolCalls={part.toolCalls} />;
+                          }
+                          if (part.type === 'text') {
+                            return (
+                              <div key={pIdx} className="py-0.5">
+                                <MarkdownRenderer
+                                  content={part.content}
+                                  isStreaming={msg.status === 'streaming' && pIdx === msg.parts!.length - 1}
+                                />
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                        {/* Fallback if parts only had thinking/tools but msg.content is present */}
+                        {!msg.parts.some((p) => p.type === 'text') && msg.content && msg.status !== 'error' && (
+                          <div className="py-0.5">
+                            <MarkdownRenderer
+                              content={msg.content}
+                              isStreaming={msg.status === 'streaming'}
+                            />
+                          </div>
+                        )}
                       </div>
+                    ) : (
+                      <>
+                        {/* Fallback Turn Duration & Collapsible Thinking Indicator */}
+                        {(msg.thinking || msg.status === 'streaming' || (msg.duration_seconds && msg.duration_seconds > 0)) && (
+                          <ThinkingBlock
+                            thinking={msg.thinking}
+                            isStreaming={msg.status === 'streaming'}
+                            durationSeconds={msg.duration_seconds || totalDuration}
+                            createdAt={msg.created_at}
+                          />
+                        )}
+
+                        {/* Aggregated Read/Command Tools */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <ActionPillGroup toolCalls={msg.toolCalls} />
+                        )}
+
+                        {/* Clean Markdown Typography (Direct on Canvas) */}
+                        {msg.content && msg.status !== 'error' && (
+                          <div className="py-0.5">
+                            <MarkdownRenderer
+                              content={msg.content}
+                              isStreaming={msg.status === 'streaming'}
+                            />
+                          </div>
+                        )}
+                      </>
                     )}
 
-                    {/* Clean Markdown Typography (Direct on Canvas) */}
-                    {msg.content && msg.status !== 'error' && (
-                      <div className="py-0.5">
-                        <MarkdownRenderer
-                          content={msg.content}
-                          isStreaming={msg.status === 'streaming'}
-                        />
+                    {/* Error / Interrupted Box with Quick Continue & Retry Action Buttons */}
+                    {msg.status === 'error' && (
+                      <div className="p-3.5 bg-amber-50/90 dark:bg-amber-950/30 rounded-2xl border border-amber-300/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs my-1">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                          <span className="leading-relaxed font-sans">
+                            {msg.content || t.canvas.turnInterrupted}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={handleContinueTask}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-medium text-xs transition shadow-2xs cursor-pointer"
+                          >
+                            <RotateCw className="w-3.5 h-3.5" />
+                            <span>{t.canvas.continueTask}</span>
+                          </button>
+                          {prevUserMsg && (
+                            <button
+                              type="button"
+                              onClick={() => handleRetryLastPrompt(prevUserMsg)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-600/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 font-medium text-xs transition cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>{t.canvas.retry}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
 

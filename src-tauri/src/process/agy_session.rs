@@ -1,6 +1,10 @@
 use crate::process::env_resolver::resolve_system_env;
 use crate::process::guard::attach_process_guard;
+use crate::process::proxy::ProxyConfig;
 use crate::protocol::events::UserEvent;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -8,11 +12,24 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex;
+use walkdir::WalkDir;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ModelInfo {
     pub id: String,
     pub label: String,
+}
+
+#[derive(serde::Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct FileSnapshot {
+    pub exists: bool,
+    pub content: Option<String>,
+    pub can_revert: bool,
+}
+
+struct WorkspaceSnapshot {
+    root: PathBuf,
+    files: HashMap<PathBuf, Option<String>>,
 }
 
 pub struct AgySession {
@@ -24,6 +41,7 @@ pub struct AgySession {
     pub current_effort: Arc<Mutex<String>>,
     pub current_model: Arc<Mutex<Option<String>>>,
     pub current_agent: Arc<Mutex<Option<String>>>,
+    file_snapshots: Arc<Mutex<Option<WorkspaceSnapshot>>>,
 }
 
 impl Default for AgySession {
@@ -43,7 +61,135 @@ impl AgySession {
             current_effort: Arc::new(Mutex::new("high".to_string())),
             current_model: Arc::new(Mutex::new(None)),
             current_agent: Arc::new(Mutex::new(None)),
+            file_snapshots: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn is_ignored_component(component: &std::ffi::OsStr) -> bool {
+        matches!(
+            component.to_string_lossy().as_ref(),
+            ".git" | "node_modules" | "target" | "dist" | "build" | "out"
+        )
+    }
+
+    fn is_ignored_path(root: &Path, path: &Path) -> bool {
+        let relative_path = path.strip_prefix(root).unwrap_or(path);
+        relative_path.components().any(|c| Self::is_ignored_component(c.as_os_str()))
+    }
+
+    fn resolve_snapshot_path(root: &Path, file_path: &str) -> Option<PathBuf> {
+        let candidate = PathBuf::from(file_path);
+        let candidate = if candidate.is_absolute() {
+            candidate
+        } else {
+            root.join(candidate)
+        };
+
+        let resolved = if candidate.exists() {
+            candidate.canonicalize().ok()?
+        } else {
+            let parent = candidate.parent()?.canonicalize().ok()?;
+            parent.join(candidate.file_name()?)
+        };
+
+        resolved.starts_with(root).then_some(resolved)
+    }
+
+    /// Capture the workspace state immediately before a new prompt is sent.
+    /// This is the only safe baseline for review/revert because HEAD may already
+    /// differ from the user's working tree.
+    pub async fn snapshot_workspace(&self) -> Result<(), String> {
+        let project_dir = self
+            .current_project_dir
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| "No active project directory".to_string())?;
+
+        let snapshot = tokio::task::spawn_blocking(move || {
+            let root = PathBuf::from(project_dir)
+                .canonicalize()
+                .map_err(|e| format!("Failed to resolve project directory: {e}"))?;
+
+            const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
+            const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024; // 32 MB string bytes budget
+            const MAX_FILES: usize = 50_000; // limit overall number of tracked entities
+
+            let mut files = HashMap::new();
+            let mut total_bytes = 0u64;
+
+            let walker = WalkDir::new(&root).follow_links(false).into_iter();
+            for entry in walker.filter_entry(|e| !Self::is_ignored_component(e.file_name())) {
+                if files.len() >= MAX_FILES {
+                    break;
+                }
+
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => continue,
+                };
+
+                let is_file = entry.file_type().is_file();
+                let content = if is_file {
+                    entry
+                        .metadata()
+                        .ok()
+                        .filter(|m| m.len() <= MAX_FILE_BYTES)
+                        .and_then(|m| {
+                            if total_bytes + m.len() <= MAX_TOTAL_BYTES {
+                                if let Ok(c) = fs::read_to_string(entry.path()) {
+                                    total_bytes += c.len() as u64;
+                                    Some(c)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                };
+
+                files.insert(entry.path().to_path_buf(), content);
+            }
+
+            Ok::<WorkspaceSnapshot, String>(WorkspaceSnapshot { root, files })
+        })
+        .await
+        .map_err(|e| format!("Snapshot task panicked: {e}"))?
+        .map_err(|e| e)?;
+
+        *self.file_snapshots.lock().await = Some(snapshot);
+        Ok(())
+    }
+
+    pub async fn get_file_snapshot(&self, file_path: &str) -> Option<FileSnapshot> {
+        let snapshots = self.file_snapshots.lock().await;
+        let snapshot = snapshots.as_ref()?;
+        let path = Self::resolve_snapshot_path(&snapshot.root, file_path)?;
+        if Self::is_ignored_path(&snapshot.root, &path) {
+            return None;
+        }
+
+        // Do not return directories as fake nonexistent files.
+        if path.is_dir() {
+            return None;
+        }
+
+        if let Some(content) = snapshot.files.get(&path) {
+            return Some(FileSnapshot {
+                exists: true,
+                content: content.clone(),
+                can_revert: content.is_some(),
+            });
+        }
+
+        Some(FileSnapshot {
+            exists: false,
+            content: Some(String::new()),
+            can_revert: true,
+        })
     }
 
     fn find_agy_binary(envs: &std::collections::HashMap<String, String>) -> String {
@@ -93,12 +239,14 @@ impl AgySession {
         model: Option<String>,
         agent: Option<String>,
         skip_permissions: bool,
+        proxy: Option<&ProxyConfig>,
     ) -> Result<String, String> {
         // If there's an existing active child, terminate first
         self.terminate().await;
 
-        let envs = resolve_system_env();
+        let envs = resolve_system_env(proxy);
         let binary_path = Self::find_agy_binary(&envs);
+
 
         let mut cmd = Command::new(&binary_path);
         cmd.envs(envs)
@@ -237,8 +385,8 @@ impl AgySession {
         Ok(binary_path)
     }
 
-    pub async fn list_agents(&self) -> Result<Vec<String>, String> {
-        let envs = resolve_system_env();
+    pub async fn list_agents(&self, proxy: Option<&ProxyConfig>) -> Result<Vec<String>, String> {
+        let envs = resolve_system_env(proxy);
         let binary_path = Self::find_agy_binary(&envs);
         let output = Command::new(&binary_path)
             .envs(envs)
@@ -265,8 +413,8 @@ impl AgySession {
             .collect())
     }
 
-    pub async fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
-        let envs = resolve_system_env();
+    pub async fn list_models(&self, proxy: Option<&ProxyConfig>) -> Result<Vec<ModelInfo>, String> {
+        let envs = resolve_system_env(proxy);
         let binary_path = Self::find_agy_binary(&envs);
         let output = Command::new(&binary_path)
             .envs(envs)
@@ -318,6 +466,9 @@ impl AgySession {
     }
 
     pub async fn send_prompt(&self, prompt: &str) -> Result<(), String> {
+        // Snapshot failures must not prevent sending a prompt; they only make
+        // file review/revert unavailable for that turn.
+        let _ = self.snapshot_workspace().await;
         let user_event = UserEvent::new(prompt);
         let json = serde_json::to_string(&user_event).map_err(|e| e.to_string())?;
         self.send_raw_json(&json).await

@@ -24,6 +24,8 @@ pub struct SessionRecord {
     pub effort: String,
     pub model: Option<String>,
     pub agent: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -391,6 +393,7 @@ impl Database {
                     effort: row.get(6)?,
                     model: row.get(7)?,
                     agent: row.get(8)?,
+                    status: None,
                 })
             })?;
             for r in rows {
@@ -409,11 +412,19 @@ impl Database {
                     effort: row.get(6)?,
                     model: row.get(7)?,
                     agent: row.get(8)?,
+                    status: None,
                 })
             })?;
             for r in rows {
                 list.push(r?);
             }
+        }
+
+        drop(conn);
+
+        // Compute live and accurate status for each session
+        for item in &mut list {
+            item.status = Some(crate::storage::brain_watcher::BrainWatcher::get_session_status(&item.id));
         }
 
         Ok(list)
@@ -676,6 +687,7 @@ mod tests {
             effort: "high".to_string(),
             model: Some("Gemini 3.7 Flash".to_string()),
             agent: Some("onyx".to_string()),
+            status: None,
         };
         db.save_session(&session).expect("Save session failed");
 

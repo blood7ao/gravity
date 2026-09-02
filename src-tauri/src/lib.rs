@@ -13,7 +13,8 @@ pub mod protocol;
 pub mod storage;
 
 use auth::oauth::OAuthFlowState;
-use process::agy_session::{AgySession, ModelInfo};
+use process::agy_session::{AgySession, FileSnapshot, ModelInfo};
+use process::proxy::ProxyConfig;
 use storage::accounts;
 use storage::brain_watcher::{ArtifactInfo, BrainWatcher};
 use storage::db::{Database, ProjectRecord, SessionRecord};
@@ -23,7 +24,9 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub account_switch_lock: tokio::sync::Mutex<()>,
     pub oauth_state: Arc<OAuthFlowState>,
+    pub proxy_config: Arc<tokio::sync::RwLock<ProxyConfig>>,
 }
+
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct SessionInfo {
@@ -122,6 +125,12 @@ async fn start_session(
     let attachment_dir = pasted_images_dir();
     fs::create_dir_all(&attachment_dir)
         .map_err(|e| format!("Failed to prepare pasted-image storage: {e}"))?;
+
+    let proxy_cfg = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
+
     state
         .session
         .start(
@@ -134,9 +143,11 @@ async fn start_session(
             model,
             agent,
             skip,
+            Some(&proxy_cfg),
         )
         .await
 }
+
 
 #[tauri::command]
 fn save_pasted_image(data_url: String, mime_type: String) -> Result<PastedImageInfo, String> {
@@ -190,6 +201,14 @@ async fn send_prompt(state: State<'_, AppState>, content: String) -> Result<(), 
 }
 
 #[tauri::command]
+async fn get_file_snapshot(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<Option<FileSnapshot>, String> {
+    Ok(state.session.get_file_snapshot(&file_path).await)
+}
+
+#[tauri::command]
 async fn send_raw_json(state: State<'_, AppState>, payload: String) -> Result<(), String> {
     state.session.send_raw_json(&payload).await
 }
@@ -228,12 +247,20 @@ async fn get_current_session_info(state: State<'_, AppState>) -> Result<SessionI
 
 #[tauri::command]
 async fn list_models(state: State<'_, AppState>) -> Result<Vec<ModelInfo>, String> {
-    state.session.list_models().await
+    let proxy_cfg = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
+    state.session.list_models(Some(&proxy_cfg)).await
 }
 
 #[tauri::command]
 async fn list_agents(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    state.session.list_agents().await
+    let proxy_cfg = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
+    state.session.list_agents(Some(&proxy_cfg)).await
 }
 
 #[tauri::command]
@@ -260,11 +287,18 @@ async fn import_active_account(
 async fn start_google_oauth(
     state: State<'_, AppState>,
 ) -> Result<storage::db::AccountRecord, String> {
-    let _switch_guard = state.account_switch_lock.lock().await;
     state.session.terminate().await;
 
-    let result = auth::oauth::run_oauth_flow(state.oauth_state.clone()).await?;
+    let proxy_cfg = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
 
+    let result = auth::oauth::run_oauth_flow(state.oauth_state.clone(), Some(&proxy_cfg)).await?;
+
+    // Only serialize the account mutation. The browser wait above must remain
+    // unlocked so manual code submission can use the same PKCE verifier.
+    let _switch_guard = state.account_switch_lock.lock().await;
     let acc = accounts::save_and_activate_oauth_account(
         &state.db,
         &result.email,
@@ -291,16 +325,29 @@ async fn submit_manual_auth_code(
     state: State<'_, AppState>,
     code_or_url: String,
 ) -> Result<storage::db::AccountRecord, String> {
-    let _switch_guard = state.account_switch_lock.lock().await;
-    state.session.terminate().await;
-
     let verifier = {
         let lock = state.oauth_state.active_verifier.lock().await;
         lock.clone()
     };
 
-    let result = auth::oauth::exchange_manual_code(&code_or_url, verifier.as_deref()).await?;
+    let proxy_cfg = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
 
+    let result = auth::oauth::exchange_manual_code(&code_or_url, verifier.as_deref(), Some(&proxy_cfg)).await?;
+
+    // A successful manual exchange supersedes the browser callback waiter.
+    let mut cancel_tx = state.oauth_state.cancel_tx.lock().await;
+    if let Some(tx) = cancel_tx.take() {
+        let _ = tx.send(());
+    }
+    drop(cancel_tx);
+    *state.oauth_state.active_verifier.lock().await = None;
+    *state.oauth_state.active_state.lock().await = None;
+
+    let _switch_guard = state.account_switch_lock.lock().await;
+    state.session.terminate().await;
     let acc = accounts::save_and_activate_oauth_account(
         &state.db,
         &result.email,
@@ -327,12 +374,24 @@ async fn refresh_account_token(
 /// Hand sign-in to the installed official app instead of collecting Google credentials
 /// or OAuth tokens in this client.
 #[tauri::command]
-fn open_official_antigravity_login() -> Result<(), String> {
+async fn open_official_antigravity_login(state: State<'_, AppState>) -> Result<(), String> {
+    let proxy = {
+        let lock = state.proxy_config.read().await;
+        lock.clone()
+    };
+
     #[cfg(target_os = "macos")]
     {
-        Command::new("/usr/bin/open")
-            .args(["-b", "com.google.antigravity"])
-            .spawn()
+        let mut cmd = Command::new("/usr/bin/open");
+        if proxy.enabled {
+            cmd.args(["-b", "com.google.antigravity", "--args", &format!("--proxy-server={}", proxy.http_url())]);
+            let mut envs = std::collections::HashMap::new();
+            proxy.apply_to_env(&mut envs);
+            cmd.envs(envs);
+        } else {
+            cmd.args(["-b", "com.google.antigravity"]);
+        }
+        cmd.spawn()
             .map_err(|error| {
                 format!(
                     "Could not open Antigravity. Install the official Antigravity app, then sign in there: {error}"
@@ -341,9 +400,33 @@ fn open_official_antigravity_login() -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(not(target_os = "macos"))]
-    Err("Official Antigravity login handoff is currently available on macOS only".to_string())
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = vec![
+            dirs::data_local_dir().map(|p| p.join("Programs\\Antigravity\\Antigravity.exe")),
+            dirs::data_local_dir().map(|p| p.join("Antigravity\\Antigravity.exe")),
+            Some(PathBuf::from("C:\\Program Files\\Antigravity\\Antigravity.exe")),
+        ];
+        let exe = candidates.into_iter().flatten().find(|p| p.is_file());
+        if let Some(exe_path) = exe {
+            let mut cmd = Command::new(exe_path);
+            if proxy.enabled {
+                cmd.arg(format!("--proxy-server={}", proxy.http_url()));
+                let mut envs = std::collections::HashMap::new();
+                proxy.apply_to_env(&mut envs);
+                cmd.envs(envs);
+            }
+            cmd.spawn().map_err(|e| format!("Failed to open Antigravity: {e}"))?;
+            Ok(())
+        } else {
+            Err("Antigravity executable not found on Windows".to_string())
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    Err("Official Antigravity login handoff is currently available on macOS and Windows only".to_string())
 }
+
 
 #[cfg(target_os = "macos")]
 fn restart_standalone_language_server() {
@@ -444,6 +527,48 @@ fn read_file_content(file_path: String) -> Result<String, String> {
     fs::read_to_string(&file_path).map_err(|e| format!("Failed to read {file_path}: {e}"))
 }
 
+/// Get the HEAD-committed version of a file via `git show HEAD:<relative_path>`.
+/// Returns Ok("") if the file is untracked (not in git yet).
+#[tauri::command]
+fn git_show_file(file_path: String) -> Result<String, String> {
+    let abs = Path::new(&file_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve path {file_path}: {e}"))?;
+
+    // Walk up to find the git repo root
+    let mut dir = abs.parent().ok_or("No parent directory")?;
+    loop {
+        if dir.join(".git").exists() {
+            break;
+        }
+        dir = dir.parent().ok_or_else(|| {
+            format!("Not inside a git repository: {file_path}")
+        })?;
+    }
+
+    let rel = abs
+        .strip_prefix(dir)
+        .map_err(|_| "Failed to compute relative path")?;
+
+    // Git tree paths always use '/' as the separator, even on Windows where the
+    // filesystem uses '\'. Without normalization, `HEAD:src\main.rs` is parsed by
+    // git as a single tree entry name instead of a path and fails to resolve.
+    let git_rel = rel.to_string_lossy().replace('\\', "/");
+
+    let output = Command::new("git")
+        .args(["show", &format!("HEAD:{git_rel}")])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        // File not tracked yet — treat as new file
+        Ok(String::new())
+    }
+}
+
 #[tauri::command]
 fn write_file_content(file_path: String, content: String) -> Result<(), String> {
     let p = Path::new(&file_path);
@@ -451,6 +576,26 @@ fn write_file_content(file_path: String, content: String) -> Result<(), String> 
         let _ = fs::create_dir_all(parent);
     }
     fs::write(&file_path, content).map_err(|e| format!("Failed to write {file_path}: {e}"))
+}
+
+#[tauri::command]
+fn remove_file_content(file_path: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    // Use symlink_metadata (never follows the link) so that broken symlinks are
+    // detected instead of looking non-existent via path.exists(), and valid
+    // symlinks are not rejected by an is_file() check on the link itself.
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("Failed to inspect {file_path}: {e}")),
+    };
+    // Allow regular files and symlinks, but refuse directories. fs::remove_file
+    // removes a symlink itself (not its target), which is also how broken
+    // symlinks are cleaned up.
+    if metadata.file_type().is_dir() {
+        return Err(format!("Refusing to remove directory: {file_path}"));
+    }
+    fs::remove_file(path).map_err(|e| format!("Failed to remove {file_path}: {e}"))
 }
 
 #[tauri::command]
@@ -547,6 +692,34 @@ fn get_raw_transcript_text(conversation_id: String) -> Result<String, String> {
     };
 
     fs::read_to_string(transcript_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_active_sessions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let mut active = BrainWatcher::list_active_sessions();
+    let is_running = futures::executor::block_on(state.session.is_running());
+    if is_running {
+        if let Some(cid) = futures::executor::block_on(state.session.current_conversation_id.lock()).clone() {
+            if !active.contains(&cid) {
+                active.push(cid);
+            }
+        }
+    }
+    Ok(active)
+}
+
+#[tauri::command]
+async fn is_session_active(state: State<'_, AppState>, conversation_id: String) -> Result<bool, String> {
+    if BrainWatcher::is_session_active(&conversation_id) {
+        return Ok(true);
+    }
+    if state.session.is_running().await {
+        let cur = state.session.current_conversation_id.lock().await.clone();
+        if cur.as_deref() == Some(&conversation_id) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1053,47 +1226,51 @@ async fn list_accounts_with_quota(
 ) -> Result<Vec<AccountWithQuotaInfo>, String> {
     let accounts_list = state.db.list_accounts().map_err(|e| e.to_string())?;
 
-    let tasks = accounts_list.into_iter().map(|acc| async move {
-        match accounts::get_or_refresh_profile_access_token(&acc.id, acc.is_active).await {
-            Ok(access_token) => {
-                let quota = query_cloud_account_quota(&access_token).await;
-                AccountWithQuotaInfo {
+    let app_db = state.db.clone();
+    let tasks = accounts_list.into_iter().map(|acc| {
+        let db = app_db.clone();
+        async move {
+            match accounts::get_or_refresh_profile_access_token(&db, &acc.id, acc.is_active).await {
+                Ok(access_token) => {
+                    let quota = query_cloud_account_quota(&access_token).await;
+                    AccountWithQuotaInfo {
+                        id: acc.id,
+                        email: acc.email,
+                        label: acc.label,
+                        is_active: acc.is_active,
+                        tier_name: quota.tier_name,
+                        gemini_5h_percent: quota.gemini_5h_percent,
+                        gemini_5h_desc: quota.gemini_5h_desc,
+                        gemini_5h_reset: quota.gemini_5h_reset,
+                        gemini_weekly_percent: quota.gemini_weekly_percent,
+                        gemini_weekly_desc: quota.gemini_weekly_desc,
+                        gemini_weekly_reset: quota.gemini_weekly_reset,
+                        claude_5h_percent: quota.claude_5h_percent,
+                        claude_weekly_percent: quota.claude_weekly_percent,
+                        claude_weekly_reset: quota.claude_weekly_reset,
+                        last_used_at: acc.last_used_at,
+                        is_valid: quota.is_valid,
+                    }
+                }
+                Err(_) => AccountWithQuotaInfo {
                     id: acc.id,
                     email: acc.email,
                     label: acc.label,
                     is_active: acc.is_active,
-                    tier_name: quota.tier_name,
-                    gemini_5h_percent: quota.gemini_5h_percent,
-                    gemini_5h_desc: quota.gemini_5h_desc,
-                    gemini_5h_reset: quota.gemini_5h_reset,
-                    gemini_weekly_percent: quota.gemini_weekly_percent,
-                    gemini_weekly_desc: quota.gemini_weekly_desc,
-                    gemini_weekly_reset: quota.gemini_weekly_reset,
-                    claude_5h_percent: quota.claude_5h_percent,
-                    claude_weekly_percent: quota.claude_weekly_percent,
-                    claude_weekly_reset: quota.claude_weekly_reset,
+                    tier_name: "Standard".to_string(),
+                    gemini_5h_percent: None,
+                    gemini_5h_desc: None,
+                    gemini_5h_reset: None,
+                    gemini_weekly_percent: None,
+                    gemini_weekly_desc: None,
+                    gemini_weekly_reset: None,
+                    claude_5h_percent: None,
+                    claude_weekly_percent: None,
+                    claude_weekly_reset: None,
                     last_used_at: acc.last_used_at,
-                    is_valid: quota.is_valid,
-                }
+                    is_valid: false,
+                },
             }
-            Err(_) => AccountWithQuotaInfo {
-                id: acc.id,
-                email: acc.email,
-                label: acc.label,
-                is_active: acc.is_active,
-                tier_name: "Standard".to_string(),
-                gemini_5h_percent: None,
-                gemini_5h_desc: None,
-                gemini_5h_reset: None,
-                gemini_weekly_percent: None,
-                gemini_weekly_desc: None,
-                gemini_weekly_reset: None,
-                claude_5h_percent: None,
-                claude_weekly_percent: None,
-                claude_weekly_reset: None,
-                last_used_at: acc.last_used_at,
-                is_valid: false,
-            },
         }
     });
 
@@ -1176,6 +1353,29 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     rx.await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_proxy_config(state: State<'_, AppState>) -> Result<ProxyConfig, String> {
+    let lock = state.proxy_config.read().await;
+    Ok(lock.clone())
+}
+
+#[tauri::command]
+async fn set_proxy_config(
+    state: State<'_, AppState>,
+    config: ProxyConfig,
+) -> Result<(), String> {
+    config.save_to_db(&state.db)?;
+
+    let mut lock = state.proxy_config.write().await;
+    *lock = config;
+    Ok(())
+}
+
+#[tauri::command]
+fn test_proxy_connection(host: String, port: u16) -> Result<bool, String> {
+    Ok(ProxyConfig::check_reachability(&host, port, 600))
+}
+
 pub fn run() {
     let app_data_dir = app_data_dir();
 
@@ -1192,6 +1392,10 @@ pub fn run() {
         eprintln!("Account switch recovery is pending: {error}");
     }
 
+    let proxy_config = ProxyConfig::load_from_db(&db);
+
+    let proxy_state = Arc::new(tokio::sync::RwLock::new(proxy_config));
+
     let session = Arc::new(AgySession::new());
     let oauth_state = Arc::new(OAuthFlowState::new());
     let state = AppState {
@@ -1199,6 +1403,7 @@ pub fn run() {
         db: db.clone(),
         account_switch_lock: tokio::sync::Mutex::new(()),
         oauth_state,
+        proxy_config: proxy_state,
     };
 
     tauri::Builder::default()
@@ -1215,6 +1420,7 @@ pub fn run() {
             start_session,
             save_pasted_image,
             send_prompt,
+            get_file_snapshot,
             send_raw_json,
             stop_session,
             is_session_running,
@@ -1238,15 +1444,22 @@ pub fn run() {
             get_setting,
             set_setting,
             read_file_content,
+            git_show_file,
             write_file_content,
+            remove_file_content,
             get_workspace_files,
             get_brain_artifacts,
             read_brain_artifact,
             get_conversation_transcript,
             get_raw_transcript_text,
+            list_active_sessions,
+            is_session_active,
             get_user_quota,
             list_accounts_with_quota,
-            pick_folder
+            pick_folder,
+            get_proxy_config,
+            set_proxy_config,
+            test_proxy_connection
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

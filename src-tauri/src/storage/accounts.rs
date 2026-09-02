@@ -152,6 +152,7 @@ pub fn get_profile_access_token(profile_id: &str) -> Result<String, String> {
 }
 
 pub async fn get_or_refresh_profile_access_token(
+    db: &Database,
     profile_id: &str,
     is_active: bool,
 ) -> Result<String, String> {
@@ -166,7 +167,8 @@ pub async fn get_or_refresh_profile_access_token(
     };
 
     if is_expired && !payload.token.refresh_token.is_empty() {
-        if let Ok(refreshed) = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token).await {
+        let proxy = crate::process::proxy::ProxyConfig::load_from_db(db);
+        if let Ok(refreshed) = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token, Some(&proxy)).await {
             payload.token.access_token = refreshed.access_token.clone();
             payload.token.expiry = refreshed.expiry_iso;
             if let Ok(new_cred) = format_keyring_payload(
@@ -454,7 +456,8 @@ pub async fn switch_account(db: &Database, profile_id: &str) -> Result<AccountRe
         };
 
         if is_expired && !payload.token.refresh_token.is_empty() {
-            if let Ok(refreshed) = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token).await {
+            let proxy = crate::process::proxy::ProxyConfig::load_from_db(db);
+            if let Ok(refreshed) = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token, Some(&proxy)).await {
                 payload.token.access_token = refreshed.access_token;
                 payload.token.expiry = refreshed.expiry_iso;
                 if let Ok(new_cred) = format_keyring_payload(
@@ -528,7 +531,8 @@ pub async fn refresh_account(db: &Database, profile_id: &str) -> Result<AccountR
         return Err("This account does not have a refresh token".to_string());
     }
 
-    let refreshed = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token).await?;
+    let proxy = crate::process::proxy::ProxyConfig::load_from_db(db);
+    let refreshed = crate::auth::oauth::refresh_google_token(&payload.token.refresh_token, Some(&proxy)).await?;
     payload.token.access_token = refreshed.access_token;
     payload.token.expiry = refreshed.expiry_iso;
 

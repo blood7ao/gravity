@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri"
+    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri",
+    "package": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri build",
+    "build:app": "bash scripts/build-to-applications.sh",
+    "build:app:open": "bash scripts/build-to-applications.sh --open"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

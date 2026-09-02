@@ -10,6 +10,7 @@ export interface TranslationSchema {
     cancel: string;
     confirm: string;
     save: string;
+    saved: string;
     delete: string;
     close: string;
     browse: string;
@@ -24,6 +25,8 @@ export interface TranslationSchema {
     themeDark: string;
     themeLight: string;
     themeSystem: string;
+    general: string;
+    network: string;
   };
   header: {
     noProject: string;
@@ -53,6 +56,9 @@ export interface TranslationSchema {
     untitledSession: string;
     noSessions: string;
     effortLabel: (effort: string) => string;
+    statusRunning: string;
+    statusPlanReady: string;
+    statusIncomplete: string;
     permissions: string;
     permAuto: string;
     permConfirm: string;
@@ -78,7 +84,27 @@ export interface TranslationSchema {
     languageSettingsDesc: string;
     themeSettingsLabel: string;
     themeSettingsDesc: string;
+    permissionSettingsTitle: string;
+    permissionSettingsDesc: string;
+    permAutoTitle: string;
+    permAutoDesc: string;
+    permConfirmTitle: string;
+    permConfirmDesc: string;
+    permSandboxTitle: string;
+    permSandboxDesc: string;
+    proxySettingsTitle: string;
+    proxySettingsDesc: string;
+    proxyEnableLabel: string;
+    proxyHostLabel: string;
+    proxyPortLabel: string;
+    proxyTestBtn: string;
+    proxyTesting: string;
+    proxyReachable: (host: string, port: number) => string;
+    proxyUnreachable: (host: string, port: number) => string;
+    proxySaveSuccess: string;
+    proxyHelpNote: string;
   };
+
   prompt: {
     inputPlaceholder: (projectName?: string) => string;
     typeAnything: string;
@@ -148,6 +174,9 @@ export interface TranslationSchema {
     retry: string;
     like: string;
     dislike: string;
+    turnInterrupted: string;
+    continueTask: string;
+    continueTaskPrompt: string;
     exploredFiles: (count: number) => string;
     details: string;
     collapse: string;
@@ -188,6 +217,8 @@ export interface TranslationSchema {
     viewRawOutput: string;
     rawLogsTitle: string;
     closeInspector: string;
+    maximizeInspector: string;
+    restoreInspector: string;
     artifactsTitle: string;
     noArtifacts: string;
     noPlan: string;

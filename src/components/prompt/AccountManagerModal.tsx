@@ -92,6 +92,7 @@ export function AccountManagerModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [isOAuthWaiting, setIsOAuthWaiting] = useState(false);
+  const [isManualSubmitting, setIsManualSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -176,6 +177,14 @@ export function AccountManagerModal({
   // 2. Manual Auth Code / URL Submission Fallback
   const handleManualCodeSubmit = async () => {
     if (!manualCodeInput.trim()) return;
+    if (!isOAuthWaiting) {
+      setError(
+        language === 'zh'
+          ? '请先点击“Google 登录”，等待授权页面打开后再提交授权码。'
+          : 'Start Google Login first, then submit the authorization code after the authorization page opens.'
+      );
+      return;
+    }
     if (isStreaming) {
       setError(
         language === 'zh'
@@ -184,7 +193,7 @@ export function AccountManagerModal({
       );
       return;
     }
-    setIsWorking(true);
+    setIsManualSubmitting(true);
     setError(null);
     setMessage(null);
 
@@ -204,7 +213,7 @@ export function AccountManagerModal({
     } catch (reason) {
       setError(String(reason));
     } finally {
-      setIsWorking(false);
+      setIsManualSubmitting(false);
     }
   };
 
@@ -803,16 +812,16 @@ export function AccountManagerModal({
                     value={manualCodeInput}
                     onChange={(e) => setManualCodeInput(e.target.value)}
                     placeholder={copy.manualPlaceholder}
-                    disabled={isWorking}
+                    disabled={(isWorking && !isOAuthWaiting) || isManualSubmitting}
                     className="flex-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-900 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                   <Button
                     size="sm"
                     variant="purple"
                     onClick={() => void handleManualCodeSubmit()}
-                    disabled={!manualCodeInput.trim() || isWorking}
+                    disabled={!manualCodeInput.trim() || (isWorking && !isOAuthWaiting) || isManualSubmitting}
                   >
-                    {isWorking ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : copy.manualSubmitBtn}
+                    {isManualSubmitting ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : copy.manualSubmitBtn}
                   </Button>
                 </div>
               </div>
